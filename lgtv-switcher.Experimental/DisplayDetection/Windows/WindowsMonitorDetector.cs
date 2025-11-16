@@ -31,9 +31,17 @@ internal sealed class WindowsMonitorDetector : IDisplayChangeDetector
             return;
         }
 
-        _started = true;
-        await _messagePump.StartAsync(cancellationToken).ConfigureAwait(false);
-        PublishSnapshot("initial-startup");
+        try
+        {
+            await _messagePump.StartAsync(cancellationToken).ConfigureAwait(false);
+            _started = true;
+            PublishSnapshot("initial-startup");
+        }
+        catch
+        {
+            _started = false;
+            throw;
+        }
     }
 
     private void OnWindowMessageReceived(object? sender, WindowMessageEventArgs e)

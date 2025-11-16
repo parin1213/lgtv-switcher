@@ -15,6 +15,9 @@ internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
     private static readonly Lazy<IReadOnlyDictionary<string, string>> _edidCache =
         new(LoadEdidFriendlyNames, LazyThreadSafetyMode.ExecutionAndPublication);
 
+    private static readonly Lazy<IReadOnlyDictionary<string, MonitorConnectionKind>> _connectionCache =
+        new(LoadConnectionKinds, LazyThreadSafetyMode.ExecutionAndPublication);
+
     public IReadOnlyList<MonitorSnapshot> EnumerateCurrentMonitors()
     {
         if (!OperatingSystem.IsWindows())
@@ -23,6 +26,7 @@ internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
         }
 
         var edidNames = _edidCache.Value;
+        var connectionKinds = _connectionCache.Value;
         var results = new List<MonitorSnapshot>();
         uint deviceIndex = 0;
 
@@ -57,12 +61,16 @@ internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
                 ? edidName
                 : (fallbackName ?? "Unknown");
 
+            var connectionKind = TryResolveConnectionKind(connectionKinds, monitorDevice.DeviceID, out var resolvedKind)
+                ? resolvedKind
+                : InferConnectionKind(monitorDevice.DeviceID, friendlyName);
+
             var snapshot = new MonitorSnapshot(
                 DeviceName: string.IsNullOrWhiteSpace(displayDevice.DeviceName) ? $"DISPLAY{deviceIndex}" : displayDevice.DeviceName,
                 FriendlyName: friendlyName,
                 Bounds: bounds,
                 IsPrimary: (displayDevice.StateFlags & NativeMethods.DisplayDeviceStateFlags.PrimaryDevice) != 0,
-                ConnectionKind: InferConnectionKind(monitorDevice.DeviceID, friendlyName));
+                ConnectionKind: connectionKind);
 
             results.Add(snapshot);
         }
@@ -144,6 +152,56 @@ internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
         }
     }
 
+    private static IReadOnlyDictionary<string, MonitorConnectionKind> LoadConnectionKinds()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return new Dictionary<string, MonitorConnectionKind>(0, StringComparer.OrdinalIgnoreCase);
+        }
+
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                @"root\wmi",
+                "SELECT InstanceName, VideoOutputTechnology FROM WmiMonitorConnectionParams WHERE Active = True");
+
+            using var results = searcher.Get();
+            var map = new Dictionary<string, MonitorConnectionKind>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var instance in results.Cast<ManagementObject>())
+            {
+                var instanceName = instance["InstanceName"] as string;
+                if (string.IsNullOrWhiteSpace(instanceName))
+                {
+                    continue;
+                }
+
+                if (instance["VideoOutputTechnology"] is uint technologyValue)
+                {
+                        Debug.WriteLine($"[Win32MonitorEnumerator] Instance '{instanceName}' VideoOutputTechnology = {technologyValue}");
+
+                    if (MapVideoOutputTechnology(technologyValue) is { } connectionKind)
+                    {
+                        map[instanceName] = connectionKind;
+                    }
+                }
+            }
+
+            Debug.WriteLine($"[Win32MonitorEnumerator] Loaded {map.Count} video output technologies.");
+            return map;
+        }
+        catch (ManagementException ex)
+        {
+            Debug.WriteLine($"[Win32MonitorEnumerator] Failed to query WMI for connection info: {ex.Message}");
+            return new Dictionary<string, MonitorConnectionKind>(0, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (SystemException ex)
+        {
+            Debug.WriteLine($"[Win32MonitorEnumerator] Unexpected error while loading connection info: {ex.Message}");
+            return new Dictionary<string, MonitorConnectionKind>(0, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
     private static string DecodeEdidString(ushort[] data)
     {
         var builder = new StringBuilder(data.Length);
@@ -189,6 +247,44 @@ internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
         }
 
         return null;
+    }
+
+    private static bool TryResolveConnectionKind(
+        IReadOnlyDictionary<string, MonitorConnectionKind> connectionKinds,
+        string? deviceId,
+        out MonitorConnectionKind connectionKind)
+    {
+        connectionKind = MonitorConnectionKind.Unknown;
+
+        if (connectionKinds.Count == 0 || string.IsNullOrWhiteSpace(deviceId))
+        {
+            return false;
+        }
+
+        var deviceToken = ExtractVendorToken(deviceId);
+        if (string.IsNullOrEmpty(deviceToken))
+        {
+            return false;
+        }
+
+        foreach (var pair in connectionKinds)
+        {
+            var instanceToken = ExtractInstanceToken(pair.Key);
+            if (instanceToken.Length == 0)
+            {
+                continue;
+            }
+
+            if (deviceToken.Contains(instanceToken, StringComparison.OrdinalIgnoreCase) ||
+                instanceToken.Contains(deviceToken, StringComparison.OrdinalIgnoreCase))
+            {
+                connectionKind = pair.Value;
+                Debug.WriteLine($"[Win32MonitorEnumerator] Matched device '{deviceId}' with connection entry '{pair.Key}' => '{connectionKind}'.");
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string ExtractVendorToken(string deviceId)
@@ -250,5 +346,37 @@ internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
         }
 
         return MonitorConnectionKind.Unknown;
+    }
+
+    private static MonitorConnectionKind MapVideoOutputTechnology(uint value)
+    {
+        // reference: https://learn.microsoft.com/ja-jp/windows/win32/wmicoreprov/wmimonitorconnectionparams
+        // D3DKMDT_VIDEO_OUTPUT_TECHNOLOGYの定義に基づく
+        return value switch
+        {
+            // D3DKMDT_VOT_HDMI (5)
+            5u => MonitorConnectionKind.Hdmi,
+
+            // D3DKMDT_VOT_DISPLAYPORT_EXTERNAL (10)
+            // D3DKMDT_VOT_DISPLAYPORT_EMBEDDED (11)
+            10u or 11u => MonitorConnectionKind.DisplayPort,
+
+            // D3DKMDT_VOT_INDIRECT_WIRED (16)
+            //   → Typically DisplayLink / USB-C dock / USB graphics adapters
+            16u => MonitorConnectionKind.Usb,
+
+            // D3DKMDT_VOT_LVDS (6)
+            // D3DKMDT_VOT_INTERNAL (0x80000000)
+            6u or 0x80000000u => MonitorConnectionKind.Internal,
+
+            // --- Wireless --------------------------------------------------------
+            // D3DKMDT_VOT_MIRACAST (15)
+            15u => MonitorConnectionKind.Wireless,
+
+            // --- Everything else -------------------------------------------------
+            // VGA/S-Video/Composite/Component/DVI/etc.
+            // → 現代の環境には存在しないことが多いため、Unknown扱いとする
+            _ => MonitorConnectionKind.Unknown,
+        };
     }
 }
