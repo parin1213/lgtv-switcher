@@ -59,7 +59,6 @@ var configurationRoot = new ConfigurationBuilder()
     .Build();
 
 var options = configurationRoot.GetSection("LgTvSwitcher").Get<LgTvSwitcherOptions>() ?? new LgTvSwitcherOptions();
-options.TargetInputId = "HDMI_2";
 
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
@@ -88,6 +87,14 @@ await using var controller = new LgTvController(
     clientKeyStore);
 try
 {
+    var currentlyTargetInput = await controller.GetCurrentInputAsync(CancellationToken.None).ConfigureAwait(false);
+    Console.WriteLine($"Current input: {currentlyTargetInput}");
+    if (currentlyTargetInput == options.TargetInputId)
+    {
+        Console.WriteLine("TV is already on the target input. No switch needed.");
+        return;
+    }
+
     await controller.SwitchInputAsync(options.TargetInputId, CancellationToken.None).ConfigureAwait(false);
     Console.WriteLine("Switch command sent.");
 }

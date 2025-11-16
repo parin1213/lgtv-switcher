@@ -112,6 +112,70 @@ public sealed class LgTvController : ILgTvController
         await SendSwitchRequestAsync(payload, inputId, allowRetry: true, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<string?> GetCurrentInputAsync(CancellationToken cancellationToken)
+    {
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+
+        var envelope = new LgTvRequestEnvelope(
+            Guid.NewGuid().ToString(),
+            "request",
+            LgTvUris.GetForegroundAppInfo,
+            Payload: null);
+
+        var payload = JsonSerializer.SerializeToUtf8Bytes(envelope);
+        var response = await SendForegroundAppInfoRequestAsync(payload, allowRetry: true, cancellationToken).ConfigureAwait(false);
+
+        if (IsErrorResponse(response, out var errorMessage))
+        {
+            throw new LgTvCommandException($"LG TV returned an error for '{LgTvUris.GetForegroundAppInfo}': {errorMessage}");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(response);
+
+            if (!document.RootElement.TryGetProperty("payload", out var payloadElement))
+            {
+                _logger.LogWarning("LG TV returned foreground app info response without a payload: {Response}", response);
+                return null;
+            }
+
+            if (payloadElement.TryGetProperty("returnValue", out var returnValueElement) &&
+                returnValueElement.ValueKind == JsonValueKind.False)
+            {
+                throw new LgTvCommandException("LG TV rejected getForegroundAppInfo request.");
+            }
+
+            string? appId = null;
+
+            if (payloadElement.TryGetProperty("appId", out var appIdProperty) &&
+                appIdProperty.ValueKind == JsonValueKind.String)
+            {
+                appId = appIdProperty.GetString();
+            }
+            else if (payloadElement.TryGetProperty("foregroundAppInfo", out var foregroundAppElement) &&
+                     foregroundAppElement.ValueKind == JsonValueKind.Object &&
+                     foregroundAppElement.TryGetProperty("appId", out var nestedAppIdProperty) &&
+                     nestedAppIdProperty.ValueKind == JsonValueKind.String)
+            {
+                appId = nestedAppIdProperty.GetString();
+            }
+
+            if (!string.IsNullOrWhiteSpace(appId))
+            {
+                var mapped = MapAppIdToInputId(appId);
+                return mapped ?? appId;
+            }
+
+            _logger.LogWarning("LG TV returned foreground app info response without an appId: {Response}", response);
+            return null;
+        }
+        catch (JsonException ex)
+        {
+            throw new LgTvCommandException("Failed to parse foreground app info response from LG TV.", ex);
+        }
+    }
+
     private async Task SendSwitchRequestAsync(
         ReadOnlyMemory<byte> payload,
         string inputId,
@@ -126,8 +190,6 @@ public sealed class LgTvController : ILgTvController
         {
             throw new LgTvCommandException($"LG TV returned an empty response for '{LgTvUris.SwitchInput}' ({inputId}) on {_options.TvHost}:{_options.TvPort}.");
         }
-
-        _logger.LogDebug("Received response: {Response}", body);
 
         if (IsNotRegisteredError(body))
         {
@@ -150,6 +212,36 @@ public sealed class LgTvController : ILgTvController
             throw new LgTvCommandException(
                 $"LG TV returned an error for '{LgTvUris.SwitchInput}' (input '{inputId}' on {_options.TvHost}:{_options.TvPort}): {errorMessage}");
         }
+    }
+
+    private async Task<string> SendForegroundAppInfoRequestAsync(
+        ReadOnlyMemory<byte> payload,
+        bool allowRetry,
+        CancellationToken cancellationToken)
+    {
+        await _transport.SendAsync(payload, cancellationToken).ConfigureAwait(false);
+        var response = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            throw new LgTvCommandException($"LG TV returned an empty response for '{LgTvUris.GetForegroundAppInfo}' on {_options.TvHost}:{_options.TvPort}.");
+        }
+
+        if (IsNotRegisteredError(response))
+        {
+            if (!allowRetry)
+            {
+                throw new LgTvCommandException(
+                    $"LG TV rejected '{LgTvUris.GetForegroundAppInfo}' on {_options.TvHost}:{_options.TvPort}: client not registered.");
+            }
+
+            _logger.LogWarning("LG TV reports the client is not registered during getForegroundAppInfo. Re-establishing the session.");
+            _isRegistered = false;
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+            return await SendForegroundAppInfoRequestAsync(payload, allowRetry: false, cancellationToken).ConfigureAwait(false);
+        }
+
+        return response;
     }
 
     private async Task<string?> SendRegistrationAsync(CancellationToken cancellationToken)
@@ -192,8 +284,6 @@ public sealed class LgTvController : ILgTvController
             {
                 throw new LgTvRegistrationException("Empty registration response received from LG TV.");
             }
-
-            _logger.LogInformation("Received registration response: {Response}", response);
 
             if (!TryParseRegistrationResponse(response, out _, out var status))
             {
@@ -342,6 +432,34 @@ public sealed class LgTvController : ILgTvController
         return _transport.DisposeAsync();
     }
 
+    private static string? MapAppIdToInputId(string? appId)
+    {
+        if (string.IsNullOrWhiteSpace(appId))
+        {
+            return null;
+        }
+
+        const string hdmiPrefix = "com.webos.app.hdmi";
+
+        if (appId.StartsWith(hdmiPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var suffix = appId[hdmiPrefix.Length..];
+            var digitLength = 0;
+
+            while (digitLength < suffix.Length && char.IsDigit(suffix[digitLength]))
+            {
+                digitLength++;
+            }
+
+            if (digitLength > 0 && int.TryParse(suffix[..digitLength], out var index))
+            {
+                return $"HDMI_{index}";
+            }
+        }
+
+        return null;
+    }
+
     private enum RegistrationStatus
     {
         Unknown,
@@ -354,13 +472,14 @@ public sealed class LgTvController : ILgTvController
     private static class LgTvUris
     {
         public const string SwitchInput = "ssap://tv/switchInput";
+        public const string GetForegroundAppInfo = "ssap://com.webos.applicationManager/getForegroundAppInfo";
     }
 
     private sealed record LgTvRequestEnvelope(
         [property: JsonPropertyName("id")] string Id,
         [property: JsonPropertyName("type")] string Type,
         [property: JsonPropertyName("uri")] string? Uri,
-        [property: JsonPropertyName("payload")] object Payload);
+        [property: JsonPropertyName("payload")] object? Payload);
 
     private sealed record SwitchInputPayload([property: JsonPropertyName("inputId")] string InputId);
 

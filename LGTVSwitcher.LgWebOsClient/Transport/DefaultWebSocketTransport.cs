@@ -87,7 +87,9 @@ public sealed class DefaultWebSocketTransport : ILgTvTransport
             }
         }
 
-        return Encoding.UTF8.GetString(memory.ToArray());
+        var resultString = Encoding.UTF8.GetString(memory.ToArray());
+        _logger.LogDebug("Received message: {Message}", resultString);
+        return resultString;
     }
 
     public async ValueTask DisposeAsync()

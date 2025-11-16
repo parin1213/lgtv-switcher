@@ -83,6 +83,23 @@ public sealed class DisplaySyncWorker : BackgroundService
             return;
         }
 
+        string? currentInput = null;
+        try
+        {
+            currentInput = await _lgTvController.GetCurrentInputAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Failed to query the current LG TV input; proceeding with switch.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentInput) &&
+            string.Equals(currentInput, targetInput, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("LG TV already set to {Input}; no switch required.", targetInput);
+            return;
+        }
+
         try
         {
             _logger.LogInformation("Switching LG TV input to {Input} (preferred monitor online = {State})", targetInput, preferredOnline);
