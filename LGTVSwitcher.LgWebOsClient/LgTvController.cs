@@ -1,6 +1,5 @@
-using System.Collections.Generic;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.LgWebOsClient.Transport;
@@ -11,6 +10,8 @@ namespace LGTVSwitcher.LgWebOsClient;
 
 public sealed class LgTvController : ILgTvController
 {
+    private static readonly TimeSpan RegistrationTimeout = TimeSpan.FromMinutes(2);
+
     private readonly ILgTvTransport _transport;
     private readonly LgTvSwitcherOptions _options;
     private readonly ILogger<LgTvController> _logger;
@@ -50,45 +51,45 @@ public sealed class LgTvController : ILgTvController
                 _isRegistered = false;
             }
 
-            if (!_isRegistered)
+            if (_isRegistered)
             {
-                if (string.IsNullOrWhiteSpace(_options.ClientKey))
-                {
-                    _logger.LogInformation("No client-key configured. Accept the pairing prompt on the TV to continue.");
-                }
-
-                var registrationResponse = await SendRegistrationAsync(cancellationToken).ConfigureAwait(false);
-
-                if (!TryParseRegistrationResponse(registrationResponse, out var clientKey, out var status))
-                {
-                    throw new InvalidOperationException("LG TV registration did not complete successfully.");
-                }
-
-                if (status != RegistrationStatus.Registered)
-                {
-                    throw new InvalidOperationException("LG TV registration did not succeed. Check the TV prompt and try again.");
-                }
-
-                if (!string.IsNullOrWhiteSpace(clientKey))
-                {
-                    _options.ClientKey = clientKey;
-                    _logger.LogInformation("Received client-key from LG TV. Store this value for future runs.");
-                    if (_clientKeyStore is not null)
-                    {
-                        await _clientKeyStore.PersistClientKeyAsync(clientKey, cancellationToken).ConfigureAwait(false);
-                    }
-                }
-
-                _isRegistered = true;
-                return registrationResponse;
+                return null;
             }
+
+            if (string.IsNullOrWhiteSpace(_options.ClientKey))
+            {
+                _logger.LogInformation("No client-key configured. Accept the pairing prompt on the TV to continue.");
+            }
+
+            var registrationResponse = await SendRegistrationAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!TryParseRegistrationResponse(registrationResponse, out var clientKey, out var status))
+            {
+                throw new LgTvRegistrationException("LG TV registration did not complete successfully.");
+            }
+
+            if (status != RegistrationStatus.Registered)
+            {
+                throw new LgTvRegistrationException("LG TV registration did not succeed. Check the TV prompt and try again.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(clientKey))
+            {
+                _options.ClientKey = clientKey;
+                _logger.LogInformation("Received client-key from LG TV. Store this value for future runs.");
+                if (_clientKeyStore is not null)
+                {
+                    await _clientKeyStore.PersistClientKeyAsync(clientKey, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            _isRegistered = true;
+            return registrationResponse;
         }
         finally
         {
             _connectionLock.Release();
         }
-
-        return null;
     }
 
     public async Task SwitchInputAsync(string inputId, CancellationToken cancellationToken)
@@ -100,13 +101,13 @@ public sealed class LgTvController : ILgTvController
 
         await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
-        var payload = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            id = Guid.NewGuid().ToString(),
-            type = "request",
-            uri = "ssap://tv/switchInput",
-            payload = new { inputId }
-        });
+        var envelope = new LgTvRequestEnvelope(
+            Guid.NewGuid().ToString(),
+            "request",
+            LgTvUris.SwitchInput,
+            new SwitchInputPayload(inputId));
+
+        var payload = JsonSerializer.SerializeToUtf8Bytes(envelope);
 
         await SendSwitchRequestAsync(payload, inputId, allowRetry: true, cancellationToken).ConfigureAwait(false);
     }
@@ -120,13 +121,20 @@ public sealed class LgTvController : ILgTvController
         _logger.LogInformation("Sending switchInput to {InputId}", inputId);
         await _transport.SendAsync(payload, cancellationToken).ConfigureAwait(false);
         var body = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            throw new LgTvCommandException($"LG TV returned an empty response for '{LgTvUris.SwitchInput}' ({inputId}) on {_options.TvHost}:{_options.TvPort}.");
+        }
+
         _logger.LogDebug("Received response: {Response}", body);
 
         if (IsNotRegisteredError(body))
         {
             if (!allowRetry)
             {
-                throw new InvalidOperationException("LG TV rejected the request because the client is not registered.");
+                throw new LgTvCommandException(
+                    $"LG TV rejected '{LgTvUris.SwitchInput}' for input '{inputId}' on {_options.TvHost}:{_options.TvPort}: client not registered.");
             }
 
             _logger.LogWarning("LG TV reports the client is not registered. Re-establishing the session.");
@@ -134,57 +142,62 @@ public sealed class LgTvController : ILgTvController
             await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
             await SendSwitchRequestAsync(payload, inputId, allowRetry: false, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (IsErrorResponse(body, out var errorMessage))
+        {
+            throw new LgTvCommandException(
+                $"LG TV returned an error for '{LgTvUris.SwitchInput}' (input '{inputId}' on {_options.TvHost}:{_options.TvPort}): {errorMessage}");
         }
     }
 
     private async Task<string?> SendRegistrationAsync(CancellationToken cancellationToken)
     {
-        var manifest = new
-        {
-            manifestVersion = 1,
-            permissions = new[]
-            {
+        var manifest = new RegistrationManifest(
+            ManifestVersion: 1,
+            Permissions:
+            [
                 "LAUNCH", "LAUNCH_WEBAPP", "CONTROL_INPUT_TEXT", "CONTROL_MOUSE_AND_KEYBOARD",
                 "READ_INSTALLED_APPS", "CONTROL_DISPLAY", "CONTROL_POWER", "READ_INPUT_DEVICE_LIST",
                 "READ_NETWORK_STATE", "READ_TV_CHANNEL_LIST", "WRITE_NOTIFICATION_TOAST",
                 "READ_POWER_STATE", "READ_CURRENT_CHANNEL", "READ_RUNNING_APPS", "READ_UPDATE_INFO"
-            },
-        };
+            ]);
 
-        var payload = new Dictionary<string, object?>
-        {
-            ["manifest"] = manifest,
-        };
+        var registerPayload = new RegistrationPayload(manifest, _options.ClientKey);
 
-        if (!string.IsNullOrWhiteSpace(_options.ClientKey))
-        {
-            payload["client-key"] = _options.ClientKey;
-        }
+        var envelope = new LgTvRequestEnvelope(
+            Guid.NewGuid().ToString(),
+            "register",
+            null,
+            registerPayload);
 
-        var envelope = new
-        {
-            id = Guid.NewGuid().ToString(),
-            type = "register",
-            payload
-        };
-
-        _logger.LogInformation("Registering with LG TV");
         await _transport.SendAsync(JsonSerializer.SerializeToUtf8Bytes(envelope), cancellationToken).ConfigureAwait(false);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(RegistrationTimeout);
 
         while (true)
         {
-            var response = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+            string? response;
+            try
+            {
+                response = await _transport.ReceiveStringAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new LgTvRegistrationException("Timed out waiting for LG TV pairing confirmation.", ex);
+            }
 
             if (string.IsNullOrWhiteSpace(response))
             {
-                throw new InvalidOperationException("Empty registration response received from LG TV.");
+                throw new LgTvRegistrationException("Empty registration response received from LG TV.");
             }
 
             _logger.LogInformation("Received registration response: {Response}", response);
 
             if (!TryParseRegistrationResponse(response, out _, out var status))
             {
-                throw new InvalidOperationException("Failed to parse registration response from LG TV.");
+                throw new LgTvRegistrationException("Failed to parse registration response from LG TV.");
             }
 
             switch (status)
@@ -192,10 +205,10 @@ public sealed class LgTvController : ILgTvController
                 case RegistrationStatus.Registered:
                     return response;
                 case RegistrationStatus.RequiresPrompt:
-                    _logger.LogInformation("Waiting for the TV user to approve the pairing request...");
+                    _logger.LogInformation("Waiting for pairing approval on the TV...");
                     continue;
                 case RegistrationStatus.Error:
-                    throw new InvalidOperationException($"LG TV registration failed: {response}");
+                    throw new LgTvRegistrationException($"LG TV registration failed: {response}");
                 default:
                     continue;
             }
@@ -214,56 +227,47 @@ public sealed class LgTvController : ILgTvController
 
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.TryGetProperty("type", out var typeProperty))
+            var envelope = JsonSerializer.Deserialize<LgTvResponseEnvelope>(json);
+            if (envelope is null || string.IsNullOrWhiteSpace(envelope.Type))
             {
-                var typeValue = typeProperty.GetString();
-                if (string.Equals(typeValue, "registered", StringComparison.OrdinalIgnoreCase))
-                {
-                    status = RegistrationStatus.Registered;
-                }
-                else if (string.Equals(typeValue, "response", StringComparison.OrdinalIgnoreCase))
-                {
-                    status = RegistrationStatus.Response;
-                }
-                else if (string.Equals(typeValue, "prompt", StringComparison.OrdinalIgnoreCase))
-                {
-                    status = RegistrationStatus.RequiresPrompt;
-                }
-                else if (string.Equals(typeValue, "error", StringComparison.OrdinalIgnoreCase))
-                {
-                    status = RegistrationStatus.Error;
-                }
+                return false;
             }
 
-            if (root.TryGetProperty("payload", out var payload))
+            clientKey = envelope.Payload?.ClientKey;
+
+            switch (envelope.Type.ToLowerInvariant())
             {
-                if (payload.TryGetProperty("client-key", out var clientKeyProperty))
-                {
-                    clientKey = clientKeyProperty.GetString();
-                }
-
-                if (payload.TryGetProperty("pairingType", out var pairingTypeProperty) &&
-                    string.Equals(pairingTypeProperty.GetString(), "PROMPT", StringComparison.OrdinalIgnoreCase))
-                {
-                    status = RegistrationStatus.RequiresPrompt;
-                }
-
-                if (payload.TryGetProperty("returnValue", out var returnValueProperty) &&
-                    returnValueProperty.ValueKind == JsonValueKind.True &&
-                    payload.TryGetProperty("client-key", out _))
-                {
+                case "registered":
                     status = RegistrationStatus.Registered;
-                }
-            }
-
-            if (status == RegistrationStatus.Error &&
-                root.TryGetProperty("error", out var errorProperty) &&
-                errorProperty.GetString()?.Contains("register already in progress", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                status = RegistrationStatus.RequiresPrompt;
+                    break;
+                case "response":
+                    if (string.Equals(envelope.Payload?.PairingType, "PROMPT", StringComparison.OrdinalIgnoreCase))
+                    {
+                        status = RegistrationStatus.RequiresPrompt;
+                    }
+                    else if (envelope.Payload?.ReturnValue == true && !string.IsNullOrWhiteSpace(envelope.Payload?.ClientKey))
+                    {
+                        status = RegistrationStatus.Registered;
+                    }
+                    else
+                    {
+                        status = RegistrationStatus.Response;
+                    }
+                    break;
+                case "error":
+                    if (!string.IsNullOrWhiteSpace(envelope.Error) &&
+                        envelope.Error.Contains("register already in progress", StringComparison.OrdinalIgnoreCase))
+                    {
+                        status = RegistrationStatus.RequiresPrompt;
+                    }
+                    else
+                    {
+                        status = RegistrationStatus.Error;
+                    }
+                    break;
+                default:
+                    status = RegistrationStatus.Unknown;
+                    break;
             }
 
             return true;
@@ -283,20 +287,45 @@ public sealed class LgTvController : ILgTvController
 
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            var envelope = JsonSerializer.Deserialize<LgTvResponseEnvelope>(json);
+            if (envelope is null)
+            {
+                return false;
+            }
 
-        if (root.TryGetProperty("type", out var typeProperty) &&
-            string.Equals(typeProperty.GetString(), "error", StringComparison.OrdinalIgnoreCase) &&
-            root.TryGetProperty("error", out var errorProperty))
+            return string.Equals(envelope.Type, "error", StringComparison.OrdinalIgnoreCase) &&
+                   !string.IsNullOrWhiteSpace(envelope.Error) &&
+                   envelope.Error.Contains("401", StringComparison.OrdinalIgnoreCase) &&
+                   envelope.Error.Contains("not registered", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
         {
-                var error = errorProperty.GetString();
-                if (!string.IsNullOrWhiteSpace(error) &&
-                    error.Contains("401", StringComparison.OrdinalIgnoreCase) &&
-                    error.Contains("not registered", StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+            return false;
+        }
+    }
+
+    private static bool IsErrorResponse(string? json, out string? errorMessage)
+    {
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<LgTvResponseEnvelope>(json);
+            if (envelope is null)
+            {
+                return false;
+            }
+
+            if (string.Equals(envelope.Type, "error", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(envelope.Error))
+            {
+                errorMessage = envelope.Error;
+                return true;
             }
         }
         catch (JsonException)
@@ -321,4 +350,36 @@ public sealed class LgTvController : ILgTvController
         RequiresPrompt,
         Error,
     }
+
+    private static class LgTvUris
+    {
+        public const string SwitchInput = "ssap://tv/switchInput";
+    }
+
+    private sealed record LgTvRequestEnvelope(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("uri")] string? Uri,
+        [property: JsonPropertyName("payload")] object Payload);
+
+    private sealed record SwitchInputPayload([property: JsonPropertyName("inputId")] string InputId);
+
+    private sealed record RegistrationManifest(
+        [property: JsonPropertyName("manifestVersion")] int ManifestVersion,
+        [property: JsonPropertyName("permissions")] string[] Permissions);
+
+    private sealed record RegistrationPayload(
+        [property: JsonPropertyName("manifest")] RegistrationManifest Manifest,
+        [property: JsonPropertyName("client-key")] string? ClientKey);
+
+    private sealed record LgTvResponsePayload(
+        [property: JsonPropertyName("client-key")] string? ClientKey,
+        [property: JsonPropertyName("pairingType")] string? PairingType,
+        [property: JsonPropertyName("returnValue")] bool? ReturnValue);
+
+    private sealed record LgTvResponseEnvelope(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("id")] string? Id,
+        [property: JsonPropertyName("payload")] LgTvResponsePayload? Payload,
+        [property: JsonPropertyName("error")] string? Error);
 }

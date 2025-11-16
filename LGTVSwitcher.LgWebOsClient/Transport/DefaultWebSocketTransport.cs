@@ -38,15 +38,9 @@ public sealed class DefaultWebSocketTransport : ILgTvTransport
                     return true;
                 }
 
-                // ログだけ残して、このホストに対しては許可する
-                //_logger.LogWarning(
-                //    "Ignoring TLS certificate error(s) {Errors} for {Uri}",
-                //    errors, uri);
-
-                // wss で、かつローカルの LG TV 宛てだけ許可
-                if (uri.Scheme == "wss"
-                    && uri.Host.Equals("lgwebostv.local", StringComparison.OrdinalIgnoreCase))
+                if (uri.Scheme == "wss")
                 {
+                    _logger.LogWarning("Ignoring TLS certificate error(s) {Errors} for {Uri}", errors, uri);
                     return true;
                 }
 
