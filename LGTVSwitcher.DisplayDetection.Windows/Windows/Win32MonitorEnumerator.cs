@@ -5,19 +5,12 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using System.Threading;
 
 namespace LGTVSwitcher.DisplayDetection.Windows;
 
 [SupportedOSPlatform("windows")]
 public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 {
-    private static readonly Lazy<IReadOnlyDictionary<string, string>> _edidCache =
-        new(LoadEdidFriendlyNames, LazyThreadSafetyMode.ExecutionAndPublication);
-
-    private static readonly Lazy<IReadOnlyDictionary<string, MonitorConnectionKind>> _connectionCache =
-        new(LoadConnectionKinds, LazyThreadSafetyMode.ExecutionAndPublication);
-
     public IReadOnlyList<MonitorSnapshot> EnumerateCurrentMonitors()
     {
         if (!OperatingSystem.IsWindows())
@@ -25,8 +18,8 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
             return Array.Empty<MonitorSnapshot>();
         }
 
-        var edidNames = _edidCache.Value;
-        var connectionKinds = _connectionCache.Value;
+        var edidNames = LoadEdidFriendlyNames();
+        var connectionKinds = LoadConnectionKinds();
         var results = new List<MonitorSnapshot>();
         uint deviceIndex = 0;
 
