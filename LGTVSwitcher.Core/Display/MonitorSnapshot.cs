@@ -1,11 +1,11 @@
-namespace LGTVSwitcher.DisplayDetection;
+namespace LGTVSwitcher.Core.Display;
 
 /// <summary>
-/// Snapshot of a single logical monitor at a specific moment（単一論理モニタの状態を任意時点で切り取った情報）。
+/// Snapshot of a single logical monitor at a specific moment（単一論理モニタの状態を任意タイミングで切り取った情報）。
 /// </summary>
 /// <param name="DeviceName">Win32 device name (例: <c>\\.\DISPLAY1</c> ).</param>
-/// <param name="FriendlyName">Human readable label used in logs（ログ表記用の名称）。</param>
-/// <param name="Bounds">Pixel bounds relative to the virtual desktop（仮想デスクトップ基準の座標/サイズ）。</param>
+/// <param name="FriendlyName">Human readable label used in logs（ログに表示する名称）。</param>
+/// <param name="Bounds">Pixel bounds relative to the virtual desktop（仮想デスクトップ基準の座標とサイズ）。</param>
 /// <param name="IsPrimary">True if the OS marks the monitor as primary（プライマリモニタかどうか）。</param>
 /// <param name="ConnectionKind">Coarse classification of how the monitor is connected（接続方式の大まかな分類）。</param>
 public sealed record MonitorSnapshot(

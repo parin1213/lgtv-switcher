@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Runtime.Versioning;
+using LGTVSwitcher.Core.Display;
 
 namespace LGTVSwitcher.DisplayDetection.Windows;
 

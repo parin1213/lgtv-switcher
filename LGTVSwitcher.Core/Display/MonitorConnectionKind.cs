@@ -1,4 +1,4 @@
-namespace LGTVSwitcher.DisplayDetection;
+namespace LGTVSwitcher.Core.Display;
 
 /// <summary>
 /// Light-weight description of how a monitor is connected.

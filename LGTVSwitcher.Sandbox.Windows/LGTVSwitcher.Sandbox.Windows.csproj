@@ -13,7 +13,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\\LGTVSwitcher.Core\\LGTVSwitcher.Core.csproj" />
     <ProjectReference Include="..\\LGTVSwitcher.DisplayDetection.Windows\\LGTVSwitcher.DisplayDetection.Windows.csproj" />
+    <ProjectReference Include="..\\LGTVSwitcher.LgWebOsClient\\LGTVSwitcher.LgWebOsClient.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

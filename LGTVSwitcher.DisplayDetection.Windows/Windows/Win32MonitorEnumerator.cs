@@ -5,6 +5,7 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using LGTVSwitcher.Core.Display;
 
 namespace LGTVSwitcher.DisplayDetection.Windows;
 
