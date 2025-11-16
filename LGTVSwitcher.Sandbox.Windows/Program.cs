@@ -41,24 +41,26 @@ static void ConfigureServices(IConfiguration configuration, IServiceCollection s
 #pragma warning restore CA1416
 */
 
+using System.IO;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.LgWebOsClient;
 using LGTVSwitcher.LgWebOsClient.Transport;
+using LGTVSwitcher.Sandbox.Windows;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-var configuration = new ConfigurationBuilder()
+var basePath = Directory.GetCurrentDirectory();
+var configurationRoot = new ConfigurationBuilder()
+    .SetBasePath(basePath)
     .AddJsonFile("appsettings.json", optional: true)
     .AddEnvironmentVariables()
     .AddCommandLine(args)
     .Build();
 
-var options = configuration.GetSection("LgTvSwitcher").Get<LgTvSwitcherOptions>() ?? new LgTvSwitcherOptions();
+var options = configurationRoot.GetSection("LgTvSwitcher").Get<LgTvSwitcherOptions>() ?? new LgTvSwitcherOptions();
 options.TargetInputId = "HDMI_2";
 
-// ★ LoggerFactory を作る
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
     builder
@@ -71,8 +73,10 @@ using var loggerFactory = LoggerFactory.Create(builder =>
 });
 var lgTvControllerLogger = loggerFactory.CreateLogger<LgTvController>();
 var transportLogger = loggerFactory.CreateLogger<DefaultWebSocketTransport>();
-
-
+var keyStoreLogger = loggerFactory.CreateLogger<FileBasedLgTvClientKeyStore>();
+var clientKeyStore = new FileBasedLgTvClientKeyStore(
+    Path.Combine(basePath, "appsettings.json"),
+    keyStoreLogger);
 
 Console.WriteLine($"Switching LG TV ({options.TvHost}) to input {options.TargetInputId}...");
 
@@ -80,7 +84,8 @@ await using var transport = new DefaultWebSocketTransport(transportLogger);
 await using var controller = new LgTvController(
     transport,
     Options.Create(options),
-    lgTvControllerLogger);
+    lgTvControllerLogger,
+    clientKeyStore);
 try
 {
     await controller.SwitchInputAsync(options.TargetInputId, CancellationToken.None).ConfigureAwait(false);
