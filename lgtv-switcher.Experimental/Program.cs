@@ -1,6 +1,8 @@
-using System.Text.Json;
+using System.Runtime.Versioning;
 using LGTVSwitcher.Experimental.DisplayDetection;
 using LGTVSwitcher.Experimental.DisplayDetection.Windows;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 if (!OperatingSystem.IsWindows())
 {
@@ -8,35 +10,20 @@ if (!OperatingSystem.IsWindows())
     return;
 }
 
-await using var detector = new WindowsMonitorDetector(new WindowsMessagePump(), new Win32MonitorEnumerator());
+#pragma warning disable CA1416
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices(services => ConfigureServices(services))
+    .UseConsoleLifetime()
+    .Build();
 
-detector.DisplayChanged += (_, args) =>
+await host.RunAsync().ConfigureAwait(false);
+
+[SupportedOSPlatform("windows")]
+static void ConfigureServices(IServiceCollection services)
 {
-    var payload = new
-    {
-        args.Timestamp,
-        args.Reason,
-        Monitors = args.Snapshots.Select(snapshot => new
-        {
-            snapshot.DeviceName,
-            snapshot.FriendlyName,
-            Bounds = new { snapshot.Bounds.X, snapshot.Bounds.Y, snapshot.Bounds.Width, snapshot.Bounds.Height },
-            snapshot.IsPrimary,
-            Connection = snapshot.ConnectionKind.ToString(),
-        }),
-    };
-
-    Console.WriteLine(JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
-};
-
-await detector.StartAsync().ConfigureAwait(false);
-Console.WriteLine("Listening for monitor topology changes... Press Ctrl+C to exit.");
-
-var done = new TaskCompletionSource();
-Console.CancelKeyPress += (_, e) =>
-{
-    e.Cancel = true;
-    done.TrySetResult();
-};
-
-await done.Task.ConfigureAwait(false);
+    services.AddSingleton<WindowsMessagePump>();
+    services.AddSingleton<IMonitorEnumerator, Win32MonitorEnumerator>();
+    services.AddSingleton<IDisplayChangeDetector, WindowsMonitorDetector>();
+    services.AddHostedService<DisplayChangeLoggingService>();
+}
+#pragma warning restore CA1416
