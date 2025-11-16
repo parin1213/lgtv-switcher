@@ -14,8 +14,14 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly ILgTvController _lgTvController;
     private readonly ILogger<DisplaySyncWorker> _logger;
     private readonly LgTvSwitcherOptions _options;
-    private readonly Channel<IReadOnlyList<MonitorSnapshot>> _channel = Channel.CreateUnbounded<IReadOnlyList<MonitorSnapshot>>();
-    private bool _lastPreferredOnline;
+    private readonly Channel<IReadOnlyList<MonitorSnapshot>> _channel =
+        Channel.CreateBounded<IReadOnlyList<MonitorSnapshot>>(new BoundedChannelOptions(1)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropOldest,
+        });
+    private bool? _lastPreferredOnline;
 
     public DisplaySyncWorker(
         IDisplayChangeDetector detector,
@@ -60,7 +66,7 @@ public sealed class DisplaySyncWorker : BackgroundService
     {
         var preferredOnline = IsPreferredMonitorPresent(snapshots);
 
-        if (preferredOnline == _lastPreferredOnline)
+        if (_lastPreferredOnline is not null && preferredOnline == _lastPreferredOnline.Value)
         {
             return;
         }
