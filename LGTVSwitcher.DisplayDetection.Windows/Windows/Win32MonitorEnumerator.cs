@@ -7,10 +7,10 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Threading;
 
-namespace LGTVSwitcher.Experimental.DisplayDetection.Windows;
+namespace LGTVSwitcher.DisplayDetection.Windows;
 
 [SupportedOSPlatform("windows")]
-internal sealed class Win32MonitorEnumerator : IMonitorEnumerator
+public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 {
     private static readonly Lazy<IReadOnlyDictionary<string, string>> _edidCache =
         new(LoadEdidFriendlyNames, LazyThreadSafetyMode.ExecutionAndPublication);

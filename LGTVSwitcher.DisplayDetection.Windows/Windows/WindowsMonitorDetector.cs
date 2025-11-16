@@ -1,10 +1,10 @@
 using System.Linq;
 using System.Runtime.Versioning;
 
-namespace LGTVSwitcher.Experimental.DisplayDetection.Windows;
+namespace LGTVSwitcher.DisplayDetection.Windows;
 
 [SupportedOSPlatform("windows")]
-internal sealed class WindowsMonitorDetector : IDisplayChangeDetector
+public sealed class WindowsMonitorDetector : IDisplayChangeDetector
 {
     private readonly WindowsMessagePump _messagePump;
     private readonly IMonitorEnumerator _enumerator;

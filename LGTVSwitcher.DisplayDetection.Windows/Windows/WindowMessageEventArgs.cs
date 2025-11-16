@@ -1,13 +1,13 @@
-namespace LGTVSwitcher.Experimental.DisplayDetection.Windows;
+namespace LGTVSwitcher.DisplayDetection.Windows;
 
-internal enum WindowMessageKind
+public enum WindowMessageKind
 {
     Other = 0,
     DisplayChanged,
     DeviceChanged,
 }
 
-internal sealed class WindowMessageEventArgs(WindowMessageKind kind, uint messageId, nuint wParam, nint lParam) : EventArgs
+public sealed class WindowMessageEventArgs(WindowMessageKind kind, uint messageId, nuint wParam, nint lParam) : EventArgs
 {
     public WindowMessageKind Kind { get; } = kind;
 

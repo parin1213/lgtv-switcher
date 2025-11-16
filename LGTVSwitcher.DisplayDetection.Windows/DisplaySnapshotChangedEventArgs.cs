@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 
-namespace LGTVSwitcher.Experimental.DisplayDetection;
+namespace LGTVSwitcher.DisplayDetection;
 
 public sealed class DisplaySnapshotChangedEventArgs(IReadOnlyList<MonitorSnapshot> snapshots, string reason)
     : EventArgs

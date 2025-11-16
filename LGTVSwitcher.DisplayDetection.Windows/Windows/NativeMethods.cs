@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace LGTVSwitcher.Experimental.DisplayDetection.Windows;
+namespace LGTVSwitcher.DisplayDetection.Windows;
 
 [SupportedOSPlatform("windows")]
 internal static class NativeMethods

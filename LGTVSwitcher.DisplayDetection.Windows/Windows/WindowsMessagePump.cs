@@ -2,10 +2,10 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace LGTVSwitcher.Experimental.DisplayDetection.Windows;
+namespace LGTVSwitcher.DisplayDetection.Windows;
 
 [SupportedOSPlatform("windows")]
-internal sealed class WindowsMessagePump : IAsyncDisposable, IDisposable
+public sealed class WindowsMessagePump : IAsyncDisposable, IDisposable
 {
     private Task? _pumpTask;
     private TaskCompletionSource<bool>? _readyTcs;
