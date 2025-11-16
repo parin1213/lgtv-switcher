@@ -4,7 +4,7 @@ using LGTVSwitcher.DisplayDetection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace LGTVSwitcher.Experimental.DisplayDetection;
+namespace LGTVSwitcher.Sandbox.Windows.DisplayDetection;
 
 internal sealed class DisplayChangeLoggingService : BackgroundService
 {

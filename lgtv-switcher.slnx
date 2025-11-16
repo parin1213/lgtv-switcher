@@ -2,5 +2,6 @@
   <Folder Name="/ソリューション項目/">
     <File Path="PLAN.md" />
   </Folder>
-  <Project Path="lgtv-switcher.Experimental/lgtv-switcher.Experimental.csproj" Id="44a916d5-da9b-415a-9fc0-af1afb11f279" />
+  <Project Path="LGTVSwitcher.Sandbox.Windows/LGTVSwitcher.Sandbox.Windows.csproj" Id="44a916d5-da9b-415a-9fc0-af1afb11f279" />
+  <Project Path="LGTVSwitcher.DisplayDetection.Windows/LGTVSwitcher.DisplayDetection.Windows.csproj" Id="7527fd25-b68a-4008-89f3-0e4e6a3bfaa3" />
 </Solution>

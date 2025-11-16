@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using LGTVSwitcher.DisplayDetection;
 using LGTVSwitcher.DisplayDetection.Windows;
-using LGTVSwitcher.Experimental.DisplayDetection;
+using LGTVSwitcher.Sandbox.Windows.DisplayDetection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
