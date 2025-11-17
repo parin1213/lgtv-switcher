@@ -127,6 +127,7 @@ public sealed class DisplaySyncWorker : BackgroundService
 
         return snapshots.Any(snapshot =>
             string.Equals(snapshot.FriendlyName, preferredName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(snapshot.DeviceName, preferredName, StringComparison.OrdinalIgnoreCase));
+            string.Equals(snapshot.DeviceName, preferredName, StringComparison.OrdinalIgnoreCase) ||
+            snapshot.FriendlyName.Contains(preferredName, StringComparison.OrdinalIgnoreCase));
     }
 }
