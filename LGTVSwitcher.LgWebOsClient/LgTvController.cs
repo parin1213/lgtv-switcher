@@ -1,3 +1,5 @@
+using System.IO;
+using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -183,8 +185,22 @@ public sealed class LgTvController : ILgTvController
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Sending switchInput to {InputId}", inputId);
-        await _transport.SendAsync(payload, cancellationToken).ConfigureAwait(false);
-        var body = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+        string? body;
+
+        try
+        {
+            await _transport.SendAsync(payload, cancellationToken).ConfigureAwait(false);
+            body = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (allowRetry && (ex is WebSocketException || ex is IOException))
+        {
+            _logger.LogWarning(ex, "LG TV transport failed. Re-establishing session and retrying.");
+            _isRegistered = false;
+            await _transport.DisposeAsync().ConfigureAwait(false);
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+            await SendSwitchRequestAsync(payload, inputId, allowRetry: false, cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(body))
         {
@@ -219,8 +235,21 @@ public sealed class LgTvController : ILgTvController
         bool allowRetry,
         CancellationToken cancellationToken)
     {
-        await _transport.SendAsync(payload, cancellationToken).ConfigureAwait(false);
-        var response = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+        string? response;
+
+        try
+        {
+            await _transport.SendAsync(payload, cancellationToken).ConfigureAwait(false);
+            response = await _transport.ReceiveStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (allowRetry && (ex is WebSocketException || ex is IOException))
+        {
+            _logger.LogWarning(ex, "LG TV transport failed during getForegroundAppInfo. Re-establishing session and retrying.");
+            _isRegistered = false;
+            await _transport.DisposeAsync().ConfigureAwait(false);
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+            return await SendForegroundAppInfoRequestAsync(payload, allowRetry: false, cancellationToken).ConfigureAwait(false);
+        }
 
         if (string.IsNullOrWhiteSpace(response))
         {
