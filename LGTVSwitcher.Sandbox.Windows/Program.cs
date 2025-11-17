@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.Versioning;
+
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
@@ -8,6 +9,7 @@ using LGTVSwitcher.LgWebOsClient;
 using LGTVSwitcher.LgWebOsClient.Transport;
 using LGTVSwitcher.Sandbox.Windows;
 using LGTVSwitcher.Sandbox.Windows.DisplayDetection;
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -39,7 +41,7 @@ static void ConfigureServices(IConfiguration configuration, IServiceCollection s
         // HostBuilder が appsettings.json のパスを解決してくれる
         var hostEnvironment = sp.GetRequiredService<IHostEnvironment>();
         var settingsPath = Path.Combine(hostEnvironment.ContentRootPath, "appsettings.json");
-        
+
         var logger = sp.GetRequiredService<ILogger<FileBasedLgTvClientKeyStore>>();
         return new FileBasedLgTvClientKeyStore(settingsPath, logger);
     });
@@ -52,7 +54,7 @@ static void ConfigureServices(IConfiguration configuration, IServiceCollection s
     services.AddSingleton<WindowsMessagePump>();
     services.AddSingleton<IMonitorEnumerator, Win32MonitorEnumerator>();
     services.AddSingleton<IDisplayChangeDetector, WindowsMonitorDetector>();
-    
+
     // 5. 常駐ワーカー（IHostedService）を登録
     // モニタ状態を LG TV と同期するワーカー
     services.AddHostedService<DisplaySyncWorker>();

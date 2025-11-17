@@ -1,6 +1,8 @@
 using System.Linq;
 using System.Text.Json;
+
 using LGTVSwitcher.Core.Display;
+
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 

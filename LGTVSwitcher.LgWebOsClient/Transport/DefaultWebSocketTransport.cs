@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Security;
 using System.Net.WebSockets;
 using System.Text;
+
 using Microsoft.Extensions.Logging;
 
 namespace LGTVSwitcher.LgWebOsClient.Transport;

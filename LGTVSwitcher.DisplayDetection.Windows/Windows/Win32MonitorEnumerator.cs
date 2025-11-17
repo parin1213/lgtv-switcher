@@ -5,6 +5,7 @@ using System.Management;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+
 using LGTVSwitcher.Core.Display;
 
 namespace LGTVSwitcher.DisplayDetection.Windows;
@@ -172,7 +173,7 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 
                 if (instance["VideoOutputTechnology"] is uint technologyValue)
                 {
-                        Debug.WriteLine($"[Win32MonitorEnumerator] Instance '{instanceName}' VideoOutputTechnology = {technologyValue}");
+                    Debug.WriteLine($"[Win32MonitorEnumerator] Instance '{instanceName}' VideoOutputTechnology = {technologyValue}");
 
                     if (MapVideoOutputTechnology(technologyValue) is { } connectionKind)
                     {

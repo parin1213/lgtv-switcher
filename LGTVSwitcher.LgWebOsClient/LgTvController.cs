@@ -3,8 +3,10 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
+
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.LgWebOsClient.Transport;
+
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

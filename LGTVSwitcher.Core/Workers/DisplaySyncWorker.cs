@@ -1,7 +1,9 @@
 using System.Linq;
 using System.Threading.Channels;
+
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
+
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

@@ -1,0 +1,11 @@
+{
+  "[csharp]": {
+    // 1. 保存時にフォーマット（空白やインデント）を自動修正
+    "editor.formatOnSave": true,
+
+    // 2. 保存時にLinter（コードスタイル）を自動修正
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "always"
+    }
+  }
+}
