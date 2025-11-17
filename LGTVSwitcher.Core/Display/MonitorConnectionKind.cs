@@ -1,8 +1,8 @@
 namespace LGTVSwitcher.Core.Display;
 
 /// <summary>
-/// Light-weight description of how a monitor is connected.
-/// Values map to the coarse information that Win32 APIs can provide today.
+/// モニタの接続方式を大まかに分類する値。
+/// Win32 API から取得できる情報の粒度に合わせた定義。
 /// </summary>
 public enum MonitorConnectionKind
 {

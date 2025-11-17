@@ -1,13 +1,13 @@
 namespace LGTVSwitcher.Core.Display;
 
 /// <summary>
-/// Snapshot of a single logical monitor at a specific moment（単一論理モニタの状態を任意タイミングで切り取った情報）。
+/// 単一の論理モニタが特定の瞬間にどのような状態だったかを表すスナップショット。
 /// </summary>
-/// <param name="DeviceName">Win32 device name (例: <c>\\.\DISPLAY1</c> ).</param>
-/// <param name="FriendlyName">Human readable label used in logs（ログに表示する名称）。</param>
-/// <param name="Bounds">Pixel bounds relative to the virtual desktop（仮想デスクトップ基準の座標とサイズ）。</param>
-/// <param name="IsPrimary">True if the OS marks the monitor as primary（プライマリモニタかどうか）。</param>
-/// <param name="ConnectionKind">Coarse classification of how the monitor is connected（接続方式の大まかな分類）。</param>
+/// <param name="DeviceName">Win32 のデバイス名（例: <c>\\.\DISPLAY1</c>）。</param>
+/// <param name="FriendlyName">ログに出力するための人間が判読しやすい名前。</param>
+/// <param name="Bounds">仮想デスクトップ基準での位置とサイズ。</param>
+/// <param name="IsPrimary">OS がプライマリモニタと認識している場合は true。</param>
+/// <param name="ConnectionKind">モニタの接続方式を大まかに分類した値。</param>
 public sealed record MonitorSnapshot(
     string DeviceName,
     string FriendlyName,
@@ -16,7 +16,7 @@ public sealed record MonitorSnapshot(
     MonitorConnectionKind ConnectionKind);
 
 /// <summary>
-/// Rectangle describing the area occupied by the monitor（モニタが占有する矩形領域）。
+/// モニタが仮想デスクトップ上で占有する矩形領域。
 /// </summary>
 public readonly record struct MonitorBounds(int X, int Y, int Width, int Height)
 {

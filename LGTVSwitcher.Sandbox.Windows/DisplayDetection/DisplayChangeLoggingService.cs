@@ -38,7 +38,7 @@ internal sealed class DisplayChangeLoggingService : BackgroundService
         }
         catch (OperationCanceledException)
         {
-            // Expected on shutdown.
+            // シャットダウン時はここでの例外が発生する想定
         }
         finally
         {

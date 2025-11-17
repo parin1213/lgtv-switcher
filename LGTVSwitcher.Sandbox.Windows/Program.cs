@@ -21,7 +21,7 @@ if (!OperatingSystem.IsWindows())
     return;
 }
 
-#pragma warning disable CA1416 // Validate platform compatibility
+#pragma warning disable CA1416 // プラットフォーム互換性の検証警告を抑制
 var host = Host.CreateDefaultBuilder(args)
     .ConfigureServices((context, services) => ConfigureServices(context.Configuration, services))
     .UseConsoleLifetime()

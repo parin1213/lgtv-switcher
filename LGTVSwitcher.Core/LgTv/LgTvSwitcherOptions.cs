@@ -3,32 +3,32 @@ namespace LGTVSwitcher.Core.LgTv;
 public sealed class LgTvSwitcherOptions
 {
     /// <summary>
-    /// Hostname or IP address of the LG TV.
+    /// LG TV のホスト名または IP アドレス。
     /// </summary>
     public string TvHost { get; set; } = "lgwebostv.local";
 
     /// <summary>
-    /// WebSocket port (defaults to 3000 for webOS TVs).
+    /// WebSocket ポート番号（webOS TV の既定値は 3000）。
     /// </summary>
     public int TvPort { get; set; } = 3000;
 
     /// <summary>
-    /// Registered client key. When empty the TV will prompt for pairing.
+    /// 登録済みクライアントキー。空の場合は TV 側にペアリング確認が表示される。
     /// </summary>
     public string? ClientKey { get; set; }
 
     /// <summary>
-    /// Input ID to switch to when the preferred monitor is online.
+    /// 優先モニタがオンラインのときに切り替える入力 ID。
     /// </summary>
     public string TargetInputId { get; set; } = "HDMI_1";
 
     /// <summary>
-    /// Optional fallback input when the preferred monitor goes offline.
+    /// 優先モニタがオフラインになった際に切り替えるフォールバック入力 ID（任意）。
     /// </summary>
     public string? FallbackInputId { get; set; }
 
     /// <summary>
-    /// Friendly name (or device name) of the monitor that should trigger LG TV switching.
+    /// LG TV の切り替えをトリガーするモニタのフレンドリ名（またはデバイス名）。
     /// </summary>
     public string PreferredMonitorName { get; set; } = string.Empty;
 }

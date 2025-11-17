@@ -345,32 +345,28 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 
     private static MonitorConnectionKind MapVideoOutputTechnology(uint value)
     {
-        // reference: https://learn.microsoft.com/ja-jp/windows/win32/wmicoreprov/wmimonitorconnectionparams
-        // D3DKMDT_VIDEO_OUTPUT_TECHNOLOGYの定義に基づく
+        // 参考: https://learn.microsoft.com/ja-jp/windows/win32/wmicoreprov/wmimonitorconnectionparams
+        // （D3DKMDT_VIDEO_OUTPUT_TECHNOLOGY の定義に基づくマッピング）
         return value switch
         {
-            // D3DKMDT_VOT_HDMI (5)
+            // D3DKMDT_VOT_HDMI (5) に該当
             5u => MonitorConnectionKind.Hdmi,
 
-            // D3DKMDT_VOT_DISPLAYPORT_EXTERNAL (10)
-            // D3DKMDT_VOT_DISPLAYPORT_EMBEDDED (11)
+            // D3DKMDT_VOT_DISPLAYPORT_EXTERNAL (10) / DISPLAYPORT_EMBEDDED (11) に該当
             10u or 11u => MonitorConnectionKind.DisplayPort,
 
-            // D3DKMDT_VOT_INDIRECT_WIRED (16)
-            //   → Typically DisplayLink / USB-C dock / USB graphics adapters
+            // D3DKMDT_VOT_INDIRECT_WIRED (16) に該当（DisplayLink や USB-C ドック等）
             16u => MonitorConnectionKind.Usb,
 
-            // D3DKMDT_VOT_LVDS (6)
-            // D3DKMDT_VOT_INTERNAL (0x80000000)
+            // D3DKMDT_VOT_LVDS (6) / INTERNAL (0x80000000) に該当
             6u or 0x80000000u => MonitorConnectionKind.Internal,
 
-            // --- Wireless --------------------------------------------------------
-            // D3DKMDT_VOT_MIRACAST (15)
+            // --- 無線系 ----------------------------------------------------------
+            // D3DKMDT_VOT_MIRACAST (15) に該当
             15u => MonitorConnectionKind.Wireless,
 
-            // --- Everything else -------------------------------------------------
-            // VGA/S-Video/Composite/Component/DVI/etc.
-            // → 現代の環境には存在しないことが多いため、Unknown扱いとする
+            // --- その他 ----------------------------------------------------------
+            // VGA/S-Video/Composite/Component/DVI など（現代環境では稀なので Unknown 扱い）
             _ => MonitorConnectionKind.Unknown,
         };
     }

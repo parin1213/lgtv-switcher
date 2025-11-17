@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net.Security;
 using System.Net.WebSockets;
 using System.Text;
@@ -30,7 +30,7 @@ public sealed class DefaultWebSocketTransport : ILgTvTransport
 
         _client = new ClientWebSocket();
 
-        // ★ ここで LG TV 向けだけ証明書検証をゆるめる
+        // ここでは LG TV 向けの接続に限り証明書検証を緩和する
         _client.Options.RemoteCertificateValidationCallback =
             (sender, certificate, chain, errors) =>
             {
@@ -109,7 +109,7 @@ public sealed class DefaultWebSocketTransport : ILgTvTransport
         }
         catch
         {
-            // ignored
+            // 終了処理を優先するためここでの例外は無視する
         }
         finally
         {
