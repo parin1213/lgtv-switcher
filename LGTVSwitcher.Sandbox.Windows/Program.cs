@@ -48,7 +48,8 @@ static void ConfigureServices(IConfiguration configuration, IServiceCollection s
 
     // 3. LG TV クライアント関連のサービスを登録
     services.AddSingleton<ILgTvTransport, DefaultWebSocketTransport>();
-    services.AddSingleton<ILgTvController, LgTvController>(); // ILgTvClientKeyStore は自動で注入される
+    services.AddSingleton<ILgTvResponseParser, LgTvResponseParser>();
+    services.AddSingleton<ILgTvController, LgTvController>(); // ILgTvClientKeyStore / ILgTvResponseParser が自動で注入される
 
     // 4. Windows ディスプレイ検知関連のサービスを登録
     services.AddSingleton<WindowsMessagePump>();
