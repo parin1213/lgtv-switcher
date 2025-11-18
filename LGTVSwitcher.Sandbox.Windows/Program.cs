@@ -52,6 +52,7 @@ static void ConfigureServices(IConfiguration configuration, IServiceCollection s
     services.AddSingleton<ILgTvController, LgTvController>(); // ILgTvClientKeyStore / ILgTvResponseParser が自動で注入される
 
     // 4. Windows ディスプレイ検知関連のサービスを登録
+    services.AddSingleton<IDisplaySnapshotStream, DisplaySnapshotStream>();
     services.AddSingleton<WindowsMessagePump>();
     services.AddSingleton<IMonitorEnumerator, Win32MonitorEnumerator>();
     services.AddSingleton<IDisplayChangeDetector, WindowsMonitorDetector>();

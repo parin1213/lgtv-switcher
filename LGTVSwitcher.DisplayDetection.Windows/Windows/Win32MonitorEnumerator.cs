@@ -65,7 +65,8 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
                 FriendlyName: friendlyName,
                 Bounds: bounds,
                 IsPrimary: (displayDevice.StateFlags & NativeMethods.DisplayDeviceStateFlags.PrimaryDevice) != 0,
-                ConnectionKind: connectionKind);
+                ConnectionKind: connectionKind,
+                EdidKey: monitorDevice.DeviceID);
 
             results.Add(snapshot);
         }

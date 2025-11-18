@@ -8,12 +8,14 @@ namespace LGTVSwitcher.Core.Display;
 /// <param name="Bounds">仮想デスクトップ基準での位置とサイズ。</param>
 /// <param name="IsPrimary">OS がプライマリモニタと認識している場合は true。</param>
 /// <param name="ConnectionKind">モニタの接続方式を大まかに分類した値。</param>
+/// <param name="EdidKey">EDID / Instance ID など、再接続に強い識別子。</param>
 public sealed record MonitorSnapshot(
     string DeviceName,
     string FriendlyName,
     MonitorBounds Bounds,
     bool IsPrimary,
-    MonitorConnectionKind ConnectionKind);
+    MonitorConnectionKind ConnectionKind,
+    string? EdidKey);
 
 /// <summary>
 /// モニタが仮想デスクトップ上で占有する矩形領域。

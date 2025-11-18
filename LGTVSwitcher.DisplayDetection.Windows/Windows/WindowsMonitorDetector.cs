@@ -1,7 +1,9 @@
+using System;
 using System.Linq;
 using System.Runtime.Versioning;
-
 using LGTVSwitcher.Core.Display;
+using LGTVSwitcher.Core.LgTv;
+using Microsoft.Extensions.Options;
 
 namespace LGTVSwitcher.DisplayDetection.Windows;
 
@@ -10,15 +12,23 @@ public sealed class WindowsMonitorDetector : IDisplayChangeDetector
 {
     private readonly WindowsMessagePump _messagePump;
     private readonly IMonitorEnumerator _enumerator;
+    private readonly IDisplaySnapshotStream _snapshotStream;
+    private readonly LgTvSwitcherOptions _options;
     private readonly object _snapshotGate = new();
     private IReadOnlyList<MonitorSnapshot> _lastSnapshot = Array.Empty<MonitorSnapshot>();
     private bool _started;
     private bool _disposed;
 
-    public WindowsMonitorDetector(WindowsMessagePump messagePump, IMonitorEnumerator enumerator)
+    public WindowsMonitorDetector(
+        WindowsMessagePump messagePump,
+        IMonitorEnumerator enumerator,
+        IDisplaySnapshotStream snapshotStream,
+        IOptions<LgTvSwitcherOptions> options)
     {
         _messagePump = messagePump;
         _enumerator = enumerator;
+        _snapshotStream = snapshotStream;
+        _options = options.Value;
         _messagePump.WindowMessageReceived += OnWindowMessageReceived;
     }
 
@@ -64,6 +74,9 @@ public sealed class WindowsMonitorDetector : IDisplayChangeDetector
         }
 
         DisplayChanged?.Invoke(this, new DisplaySnapshotChangedEventArgs(snapshot, reason));
+
+        var displaySnapshot = CreateDisplaySnapshot(snapshot);
+        _snapshotStream.Publish(displaySnapshot);
     }
 
     private bool ShouldPublish(IReadOnlyList<MonitorSnapshot> snapshot)
@@ -78,6 +91,65 @@ public sealed class WindowsMonitorDetector : IDisplayChangeDetector
             _lastSnapshot = snapshot;
             return true;
         }
+    }
+
+    private DisplaySnapshot CreateDisplaySnapshot(IReadOnlyList<MonitorSnapshot> monitorSnapshots)
+    {
+        var monitors = monitorSnapshots
+            .Select(m => new MonitorInfo(m.DeviceName, m.FriendlyName, m.IsPrimary, m.ConnectionKind))
+            .ToArray();
+
+        var preferredSnapshot = FindPreferredMonitor(monitorSnapshots);
+        MonitorInfo? preferredInfo = preferredSnapshot is null
+            ? null
+            : new MonitorInfo(
+                preferredSnapshot.DeviceName,
+                preferredSnapshot.FriendlyName,
+                preferredSnapshot.IsPrimary,
+                preferredSnapshot.ConnectionKind);
+
+        var configuredKey = _options.PreferredMonitorName;
+        var preferredKey = preferredSnapshot?.EdidKey ?? preferredSnapshot?.DeviceName ?? configuredKey;
+
+        return new DisplaySnapshot(
+            timestamp: DateTimeOffset.UtcNow,
+            monitors: monitors,
+            preferredMonitor: preferredInfo,
+            preferredMonitorOnline: preferredSnapshot is not null,
+            preferredMonitorEdidKey: preferredKey);
+    }
+
+    private MonitorSnapshot? FindPreferredMonitor(IReadOnlyList<MonitorSnapshot> snapshot)
+    {
+        return snapshot.FirstOrDefault(MatchesPreferredMonitor);
+    }
+
+    private bool MatchesPreferredMonitor(MonitorSnapshot monitor)
+    {
+        var preferredKey = _options.PreferredMonitorName;
+        if (string.IsNullOrWhiteSpace(preferredKey))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(monitor.EdidKey) &&
+            monitor.EdidKey.Contains(preferredKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(monitor.DeviceName, preferredKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.Equals(monitor.FriendlyName, preferredKey, StringComparison.OrdinalIgnoreCase) ||
+            monitor.FriendlyName.Contains(preferredKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public void Dispose()
