@@ -13,22 +13,19 @@ public sealed class DisplaySyncWorker : BackgroundService
 {
     private static readonly TimeSpan DebounceInterval = TimeSpan.FromMilliseconds(800);
 
-    private readonly IDisplayChangeDetector _detector;
-    private readonly IDisplaySnapshotStream _snapshotStream;
+    private readonly IDisplaySnapshotProvider _snapshotProvider;
     private readonly ILgTvController _lgTvController;
     private readonly ILogger<DisplaySyncWorker> _logger;
     private readonly LgTvSwitcherOptions _options;
     private IDisposable? _subscription;
 
     public DisplaySyncWorker(
-        IDisplayChangeDetector detector,
-        IDisplaySnapshotStream snapshotStream,
+        IDisplaySnapshotProvider snapshotProvider,
         ILgTvController lgTvController,
         IOptions<LgTvSwitcherOptions> options,
         ILogger<DisplaySyncWorker> logger)
     {
-        _detector = detector;
-        _snapshotStream = snapshotStream;
+        _snapshotProvider = snapshotProvider;
         _lgTvController = lgTvController;
         _logger = logger;
         _options = options.Value;
@@ -36,9 +33,12 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
+
         var comparer = new SnapshotEqualityComparer(GetTargetInput);
 
-        _subscription = _snapshotStream
+        _subscription = _snapshotProvider.Notifications
+            .Select(n => n.Snapshot)
             .Buffer(DebounceInterval)
             .Where(buffer => buffer.Count > 0)
             .Select(buffer => buffer[^1])
@@ -64,7 +64,6 @@ public sealed class DisplaySyncWorker : BackgroundService
                 _ => { },
                 ex => _logger.LogError(ex, "Display sync pipeline error."));
 
-        await _detector.StartAsync(stoppingToken).ConfigureAwait(false);
         stoppingToken.Register(() => _subscription?.Dispose());
 
         try

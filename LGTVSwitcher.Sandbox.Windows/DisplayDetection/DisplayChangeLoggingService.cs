@@ -1,5 +1,4 @@
-using System.Linq;
-using System.Text.Json;
+using System.Reactive.Linq;
 
 using LGTVSwitcher.Core.Display;
 
@@ -10,65 +9,80 @@ namespace LGTVSwitcher.Sandbox.Windows.DisplayDetection;
 
 internal sealed class DisplayChangeLoggingService : BackgroundService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-    };
+    private static readonly TimeSpan DebounceInterval = TimeSpan.FromMilliseconds(500);
 
-    private readonly IDisplayChangeDetector _detector;
+    private readonly IDisplaySnapshotProvider _snapshotProvider;
     private readonly ILogger<DisplayChangeLoggingService> _logger;
+    private readonly SnapshotEqualityComparer _comparer = new();
+    private IDisposable? _subscription;
 
     public DisplayChangeLoggingService(
-        IDisplayChangeDetector detector,
+        IDisplaySnapshotProvider snapshotProvider,
         ILogger<DisplayChangeLoggingService> logger)
     {
-        _detector = detector;
+        _snapshotProvider = snapshotProvider;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _detector.DisplayChanged += OnDisplayChanged;
+        await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
+
+        DisplaySnapshot? lastLogged = null;
+
+        _subscription = _snapshotProvider.Notifications
+            .Buffer(DebounceInterval)
+            .Where(batch => batch.Count > 0)
+            .Select(batch => batch[^1])
+            .Where(notification =>
+            {
+                if (lastLogged is not null && _comparer.Equals(lastLogged, notification.Snapshot))
+                {
+                    return false;
+                }
+
+                lastLogged = notification.Snapshot;
+                return true;
+            })
+            .Subscribe(
+                LogSnapshot,
+                ex => _logger.LogError(ex, "Display snapshot logging pipeline error."));
+
+        stoppingToken.Register(() => _subscription?.Dispose());
 
         try
         {
-            await _detector.StartAsync(stoppingToken).ConfigureAwait(false);
-
             await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            // シャットダウン時はここでの例外が発生する想定
-        }
-        finally
-        {
-            _detector.DisplayChanged -= OnDisplayChanged;
+            // expected on shutdown
         }
     }
 
-    private void OnDisplayChanged(object? sender, DisplaySnapshotChangedEventArgs e)
+    private void LogSnapshot(DisplaySnapshotNotification notification)
     {
-        var payload = new
-        {
-            e.Timestamp,
-            e.Reason,
-            Monitors = e.Snapshots.Select(snapshot => new
-            {
-                snapshot.DeviceName,
-                snapshot.FriendlyName,
-                Bounds = new
-                {
-                    snapshot.Bounds.X,
-                    snapshot.Bounds.Y,
-                    snapshot.Bounds.Width,
-                    snapshot.Bounds.Height,
-                },
-                snapshot.IsPrimary,
-                Connection = snapshot.ConnectionKind.ToString(),
-            }),
-        };
+        var level = notification.Reason.Equals("initial-startup", StringComparison.OrdinalIgnoreCase)
+            ? LogLevel.Information
+            : LogLevel.Debug;
 
-        var json = JsonSerializer.Serialize(payload, JsonOptions);
-        _logger.LogInformation("{Payload}", json);
+        var snapshot = notification.Snapshot;
+
+        _logger.Log(level,
+            "Display snapshot ({Reason}): {@Snapshot}",
+            notification.Reason,
+            new
+            {
+                snapshot.Timestamp,
+                snapshot.PreferredMonitorOnline,
+                snapshot.PreferredMonitorEdidKey,
+                PreferredConnection = snapshot.PreferredMonitor?.Connection.ToString(),
+            });
+    }
+
+    public override Task StopAsync(CancellationToken cancellationToken)
+    {
+        _subscription?.Dispose();
+        return base.StopAsync(cancellationToken);
     }
 }

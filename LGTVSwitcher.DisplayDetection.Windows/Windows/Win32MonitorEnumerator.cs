@@ -13,6 +13,7 @@ namespace LGTVSwitcher.DisplayDetection.Windows;
 [SupportedOSPlatform("windows")]
 public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 {
+
     public IReadOnlyList<MonitorSnapshot> EnumerateCurrentMonitors()
     {
         if (!OperatingSystem.IsWindows())
@@ -133,17 +134,17 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
                 }
             }
 
-            Debug.WriteLine($"[Win32MonitorEnumerator] Loaded {names.Count} EDID friendly names.");
+            MonitorLog.Write($"Loaded {names.Count} EDID friendly names.");
             return names;
         }
         catch (ManagementException ex)
         {
-            Debug.WriteLine($"[Win32MonitorEnumerator] Failed to query WMI for EDID names: {ex.Message}");
+            MonitorLog.Write($"Failed to query WMI for EDID names: {ex.Message}");
             return new Dictionary<string, string>(0, StringComparer.OrdinalIgnoreCase);
         }
         catch (SystemException ex)
         {
-            Debug.WriteLine($"[Win32MonitorEnumerator] Unexpected error while loading EDID names: {ex.Message}");
+            MonitorLog.Write($"Unexpected error while loading EDID names: {ex.Message}");
             return new Dictionary<string, string>(0, StringComparer.OrdinalIgnoreCase);
         }
     }
@@ -174,7 +175,7 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 
                 if (instance["VideoOutputTechnology"] is uint technologyValue)
                 {
-                    Debug.WriteLine($"[Win32MonitorEnumerator] Instance '{instanceName}' VideoOutputTechnology = {technologyValue}");
+                    MonitorLog.Write($"Instance '{instanceName}' VideoOutputTechnology = {technologyValue}");
 
                     if (MapVideoOutputTechnology(technologyValue) is { } connectionKind)
                     {
@@ -183,17 +184,17 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
                 }
             }
 
-            Debug.WriteLine($"[Win32MonitorEnumerator] Loaded {map.Count} video output technologies.");
+            MonitorLog.Write($"Loaded {map.Count} video output technologies.");
             return map;
         }
         catch (ManagementException ex)
         {
-            Debug.WriteLine($"[Win32MonitorEnumerator] Failed to query WMI for connection info: {ex.Message}");
+            MonitorLog.Write($"Failed to query WMI for connection info: {ex.Message}");
             return new Dictionary<string, MonitorConnectionKind>(0, StringComparer.OrdinalIgnoreCase);
         }
         catch (SystemException ex)
         {
-            Debug.WriteLine($"[Win32MonitorEnumerator] Unexpected error while loading connection info: {ex.Message}");
+            MonitorLog.Write($"Unexpected error while loading connection info: {ex.Message}");
             return new Dictionary<string, MonitorConnectionKind>(0, StringComparer.OrdinalIgnoreCase);
         }
     }
@@ -237,7 +238,7 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
             if (deviceToken.Contains(instanceToken, StringComparison.OrdinalIgnoreCase) ||
                 instanceToken.Contains(deviceToken, StringComparison.OrdinalIgnoreCase))
             {
-                Debug.WriteLine($"[Win32MonitorEnumerator] Matched device '{deviceId}' with EDID entry '{pair.Key}' => '{pair.Value}'.");
+                MonitorLog.Write($"Matched device '{deviceId}' with EDID entry '{pair.Key}' => '{pair.Value}'.");
                 return pair.Value;
             }
         }
@@ -275,7 +276,7 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
                 instanceToken.Contains(deviceToken, StringComparison.OrdinalIgnoreCase))
             {
                 connectionKind = pair.Value;
-                Debug.WriteLine($"[Win32MonitorEnumerator] Matched device '{deviceId}' with connection entry '{pair.Key}' => '{connectionKind}'.");
+                MonitorLog.Write($"Matched device '{deviceId}' with connection entry '{pair.Key}' => '{connectionKind}'.");
                 return true;
             }
         }
@@ -371,4 +372,12 @@ public sealed class Win32MonitorEnumerator : IMonitorEnumerator
             _ => MonitorConnectionKind.Unknown,
         };
     }
+
+    static class MonitorLog
+    {
+        [Conditional("MONITOR_ENUM_DEBUG")]
+        public static void Write(string message)
+            => Debug.WriteLine($"[Win32MonitorEnumerator] {message}");
+    }
+
 }
