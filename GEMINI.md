@@ -1,0 +1,1 @@
+C:/dev/src/lgtv-switcher/AGENTS.md
