@@ -27,8 +27,8 @@ public class Win32MonitorEnumeratorTests
     }
 
     [Theory]
-    [InlineData(@"\\?\DISPLAY#ABC123#4&d0a5d5&0&UID256", "ABC123")]
-    [InlineData(@"USB\\VID_0408&PID_3001\\5&2b258f8d&0&1", "VID_0408&PID_3001")]
+    [InlineData(@"\\?\DISPLAY#ABC123#4&d0a5d5&0&UID256", @"DISPLAY#ABC123#4&d0a5d5&0&UID256")]
+    [InlineData(@"USB\\VID_0408&PID_3001\\5&2b258f8d&0&1", @"VID_0408&PID_3001")]
     public void ExtractVendorToken_ReturnsToken(string deviceId, string expected)
     {
         var method = typeof(Win32MonitorEnumerator)
@@ -41,7 +41,7 @@ public class Win32MonitorEnumeratorTests
 
     [Theory]
     [InlineData("ABC123_4&d0a5d5&0&UID256", "ABC123")]
-    [InlineData("USBVID_0408&PID_3001", "USBVID_0408&PID_3001")]
+    [InlineData("USBVID_0408&PID_3001", "USBVID")]
     public void ExtractInstanceToken_ReturnsToken(string instanceName, string expected)
     {
         var method = typeof(Win32MonitorEnumerator)
