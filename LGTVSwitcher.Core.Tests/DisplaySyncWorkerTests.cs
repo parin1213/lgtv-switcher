@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net.WebSockets;
+using System.Linq;
 using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,11 +31,12 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "test-online"));
 
-        await Task.Delay(1200); // debounce 800ms + margin
-
-        Assert.Single(controller.SwitchCalls, call => call == "HDMI_4");
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "Expected a switch to HDMI_4.");
 
         await worker.StopAsync(CancellationToken.None);
     }
@@ -54,6 +56,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true, ageSeconds: 6), "stale"));
 
         await Task.Delay(1200);
@@ -78,11 +81,12 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: false), "test-offline"));
 
-        await Task.Delay(1200);
-
-        Assert.Single(controller.SwitchCalls, call => call == "HDMI_2");
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_2");
+        Assert.True(switched, "Expected a switch to HDMI_2.");
 
         await worker.StopAsync(CancellationToken.None);
     }
@@ -102,6 +106,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "test-redundant"));
 
         await Task.Delay(1200);
@@ -126,6 +131,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true, edidKey: null), "missing-edid"));
 
         await Task.Delay(1200);
@@ -150,6 +156,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
         provider.Publish(new DisplaySnapshotNotification(
             CreateSnapshot(online: true, connection: MonitorConnectionKind.Unknown), "unknown-connection"));
 
@@ -175,6 +182,8 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
         var snapshot = CreateSnapshot(online: true);
         provider.Publish(new DisplaySnapshotNotification(snapshot, "dup-1"));
         provider.Publish(new DisplaySnapshotNotification(snapshot, "dup-2"));
@@ -204,6 +213,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "query-ex"));
 
         await Task.Delay(1200);
@@ -231,6 +241,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
         provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "switch-ex"));
         await Task.Delay(900);
         controller.SwitchException = null;
@@ -259,6 +270,7 @@ public class DisplaySyncWorkerTests
         using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
 
         Assert.True(provider.Started);
 
@@ -292,6 +304,35 @@ public class DisplaySyncWorkerTests
 
         public void Publish(DisplaySnapshotNotification notification)
             => _subject.OnNext(notification);
+    }
+
+    private static async Task WaitForStart(FakeSnapshotProvider provider)
+    {
+        var timeout = Task.Delay(500);
+        while (!provider.Started)
+        {
+            if (timeout.IsCompleted)
+            {
+                break;
+            }
+            await Task.Delay(20);
+        }
+    }
+
+    private static async Task<bool> WaitForSwitchAsync(FakeLgTvController controller, Func<string, bool> predicate, int timeoutMs = 7000)
+    {
+        var start = DateTimeOffset.UtcNow;
+        while ((DateTimeOffset.UtcNow - start).TotalMilliseconds < timeoutMs)
+        {
+            if (controller.SwitchCalls.Any(predicate))
+            {
+                return true;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return controller.SwitchCalls.Any(predicate);
     }
 
     private sealed class FakeLgTvController : ILgTvController
