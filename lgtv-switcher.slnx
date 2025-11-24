@@ -3,6 +3,7 @@
     <File Path="PLAN.md" />
   </Folder>
   <Project Path="LGTVSwitcher.Sandbox.Windows/LGTVSwitcher.Sandbox.Windows.csproj" Id="44a916d5-da9b-415a-9fc0-af1afb11f279" />
+  <Project Path="LGTVSwitcher.Daemon.Windows/LGTVSwitcher.Daemon.Windows.csproj" />
   <Project Path="LGTVSwitcher.DisplayDetection.Windows/LGTVSwitcher.DisplayDetection.Windows.csproj" Id="7527fd25-b68a-4008-89f3-0e4e6a3bfaa3" />
   <Project Path="LGTVSwitcher.Core/LGTVSwitcher.Core.csproj" Id="b1c2475f-0353-4fb8-9bf6-9d79a2d9320e" />
   <Project Path="LGTVSwitcher.LgWebOsClient/LGTVSwitcher.LgWebOsClient.csproj" Id="7d7230a2-8dc1-4e15-a36b-dc6cbf1fdf52" />
