@@ -1,38 +1,49 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `LGTVSwitcher.Core`: モニター状態のドメインモデル／ワーカー／設定を保持し、OS 依存コードを持たない。
-- `LGTVSwitcher.DisplayDetection.Windows`: Hidden window + Win32/WMI による接続検知。列挙ロジックはここに閉じ込める。
-- `LGTVSwitcher.LgWebOsClient`: LG webOS 向け WebSocket クライアント、シリアライザー、トランスポート層、`ILgTvController` 実装を提供。
-- `LGTVSwitcher.Sandbox.Windows`: Generic Host ベースの検証用コンソール。`appsettings.json` にペアリング済み `ClientKey` が保存されるため秘密情報として扱う。
+## プロジェクト構成
+- **LGTVSwitcher.Core**: ドメインモデル（DisplaySnapshot など）、設定（LgTvSwitcherOptions）、
+  メインロジック（DisplaySyncWorker）、スナップショット提供IF（IDisplaySnapshotProvider）。OS 依存コードを含まない。
+- **LGTVSwitcher.DisplayDetection.Windows**: Win32/WMI によるモニター検知。Hidden Window メッセージループ（WindowsMessagePump）、列挙（Win32MonitorEnumerator）、スナップショット提供（WindowsDisplaySnapshotProvider）。
+- **LGTVSwitcher.LgWebOsClient**: LG webOS 向け WebSocket クライアント。プロトコルパーサー（LgTvResponseParser）、トランスポート層（DefaultWebSocketTransport）、ILgTvController 実装。
+- **LGTVSwitcher.Daemon.Windows**: 本番ホスト。設定読み込み、デバイス状態保存、Serilog によるログ出力。Windows サービスとして実行。
+- **tests**: Core / DisplayDetection.Windows / LgWebOsClient の単体テスト。
 
-## Build, Test, and Development Commands
-- `dotnet build lgtv-switcher.slnx` : ソリューション全体の復元＋ビルド。
-- `dotnet run --project LGTVSwitcher.Sandbox.Windows` : 監視対象モニターの接続を観測し、LG TV の入力切替をデバッグ実行。
-- `dotnet format` : `.editorconfig` に基づき自動整形。
-- Windows 実機では `LGTVSwitcher.Sandbox.Windows/bin/Debug/net10.0-windows/` の EXE を直接起動して動作確認する。
+## ビルド・実行
+- `dotnet build lgtv-switcher.slnx`
+- `dotnet test` （各テストプロジェクト）
+- Daemon: `dotnet run --project LGTVSwitcher.Daemon.Windows`
+- インストールスクリプト: `scripts/install.ps1`（管理者）、アンインストール: `scripts/uninstall.ps1`
 
-## Coding Style & Naming Conventions
-- C# は 4 スペース、XML は 2 スペースでインデント。暗黙/明示の型は文脈に応じて使い分けるが、意図が読みやすい方を優先。
-- `using` は `System` を先頭にグループ化し、アルファベット順を維持。
-- クラス／public メンバーは PascalCase、ローカル変数／private フィールドは camelCase。設定キー (`PreferredMonitorName` など) も PascalCase。
-- `dotnet_style_readonly_field=true` などアナライザー警告を解決し、`dotnet format` で最終確認。
+## コーディングスタイル
+- C# は 4 スペース。`using` は System からアルファベット順。
+- クラス/公開メンバーは PascalCase、ローカル/プライベートは camelCase（フィールドは `_` 接頭）。
+- 設定キーは PascalCase（例: TargetInputId）。
+- コメント・ドキュメント・コミットメッセージは日本語で。
 
-## Testing Guidelines
-- 現状テストプロジェクトは未整備のため、`LGTVSwitcher.Sandbox.Windows` を使って回帰確認を行う。ターゲットモニターの接続を変えつつ `TargetInputId`/`FallbackInputId` が期待通り LGTV に反映されるかを実機で確認する。
-- 将来的に自動テストを追加する場合は `LGTVSwitcher.Tests` (xUnit) を新設し、`dotnet test` を採用。テストメソッド名は `MethodName_State_Outcome` 形式を推奨。
+## アーキテクチャ指針
+- **Rx パイプライン**: DisplaySyncWorker は `IObservable<DisplaySnapshotNotification>` を 800ms Buffer → 最後の 1 件 → フィルタ → DistinctUntilChanged で処理し、LGTV 同期を行う。
+- **Stale/Noise 除去**:
+  - PreferredMonitorEdidKey が空、または ConnectionKind=Unknown のスナップショットは無視。
+  - Snapshot.Timestamp が 5 秒超古いものは stale として破棄。
+  - `DistinctUntilChanged` 比較軸: PreferredMonitorOnline / PreferredMonitorEdidKey / ConnectionKind / 対象入力。
+  - Preferred monitor 以外のモニタ変化でも Sync が走ることを期待しています。この動作は破壊しないこと
+  - ネットワーク例外（WebSocket/HttpRequest/Socket）はそのスナップショットを捨て、パイプラインは継続。最新状態のみ適用。
+- **LGTV 同期**: オンライン/オフライン双方で Target/Fallback を自動切替。既に目標入力なら冪等スキップ。購読を張ってから StartAsync を呼び、初期スナップショットも処理する。
+- **TLS/ClientKey 前提**:
+  - webOS の自己署名証明書対策として `DefaultWebSocketTransport` は wss の証明書検証を緩和する仕様を維持する。
+  - `client-key` は `%LOCALAPPDATA%/LGTVSwitcher/device-state.json` に永続化し、`appsettings.json` には置かない。起動時は `ConfigureAppConfiguration` でこの state ファイルを読み込む。
+- WindowsDisplaySnapshotProvider のメッセージループ仕様
+  - WindowsDisplaySnapshotProvider は 非UIの STA メッセージループ を持つ Hidden Window を使用する
+  - この構造は Windows の仕様上必須であり、非同期化・スレッド切替で破壊しないこと
+  - ※ 実装では Monitor 配列全体の構造差異（Count や他モニタの接続変化）も比較対象に含まれます。
+  - DisplayDetection.Windows では Task.Run や ConfigureAwait の軽率な使用は禁止
+  - **（重要）このメッセージループは STA スレッドでなければ動作しない。**
+- **ログ**: 初期スナップショットは Information、それ以外は Debug を基本。WebSocket 例外は Warning 1 行、詳細は Debug。Serilog 設定は appsettings で上書き可能（File/Console）。
 
-## Commit & Pull Request Guidelines
-- Conventional Commits (`feat(refactor): ...`, `docs: ...` など) を採用し、スコープには対象プロジェクト名を含める。
-- コミットは小さくまとめ、設定ファイルの変更は生成物と分離する。
-- PR では影響するモニター構成や再現手順、コンソールログを記載し、関連 Issue をリンクする。UI や動作の変更がある場合は LGTV の入力遷移を記録する。
-- このリポジトリに関するユーザ対応やドキュメントは必ず日本語で行う。
-- レビューを依頼し、CI や手動検証で動作確認が完了してからマージする。
+## テスト方針
+- Core: DisplaySyncWorker のオンライン/オフライン、stale 無視、冗長スイッチ抑止、例外スキップを UT で担保。
+- DisplayDetection.Windows: Win32MonitorEnumerator のトークン抽出・接続種別マッピングを UT。OS 依存部分は実機検証。
+- LgWebOsClient: レスポンスパーサーの正常/エラー/登録応答を UT。トランスポートはモック差し替え可能に。
 
-## Style & Architectural Preferences
-- **Rx パイプライン**: ディスプレイ検知フローは `IObservable<DisplaySnapshotNotification>` を軸に、`Buffer`/`DistinctUntilChanged` で短時間のノイズと重複通知を抑制する。
-- **責務分離**: Win32/WMI 列挙は `WindowsDisplaySnapshotProvider` に集約し、`DisplaySyncWorker` や `DisplayChangeLoggingService` は Provider を購読するだけにして列挙を二重化しない。
-- **ログ方針**: すべて `ILogger` で記録。初期スナップショット (`initial-startup`) は `Information`、それ以外は `Debug`。WebSocket 例外は Warning で 1 行、詳細は Debug で補足。
-- **LGTV 同期**: オンライン/オフライン双方で Target/Fallback 入力を自動切替。既に目標入力なら冪等にスキップ。Rx 購読を先に張ってから `StartAsync` を呼び、初期スナップショットも必ず処理する。
-- **JSON/Transport エラー処理**: `LgTvController` は JSON パースを `LgTvResponseParser` に委譲し、WebSocket 切断時は再接続＋再登録＋再送で復旧する。
-- **出力・レビュー言語**: ユーザへの説明、レビューコメント、追加ドキュメントは日本語で統一する。
+## 言語・レビュー
+- すべての説明・レビュー・追加ドキュメントは日本語で統一。コード識別子は英語で OK。

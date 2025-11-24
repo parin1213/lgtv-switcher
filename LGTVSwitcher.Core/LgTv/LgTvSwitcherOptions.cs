@@ -8,9 +8,9 @@ public sealed class LgTvSwitcherOptions
     public string TvHost { get; set; } = "lgwebostv.local";
 
     /// <summary>
-    /// WebSocket ポート番号（webOS TV の既定値は 3000）。
+    /// WebSocket ポート番号（webOS TV での `wss://` の既定値は 3001）。
     /// </summary>
-    public int TvPort { get; set; } = 3000;
+    public int TvPort { get; set; } = 3001;
 
     /// <summary>
     /// 登録済みクライアントキー。空の場合は TV 側にペアリング確認が表示される。
