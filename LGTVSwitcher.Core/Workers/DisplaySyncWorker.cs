@@ -1,8 +1,10 @@
 using System.Net.WebSockets;
 using System.Reactive;
 using System.Reactive.Linq;
+
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
+
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

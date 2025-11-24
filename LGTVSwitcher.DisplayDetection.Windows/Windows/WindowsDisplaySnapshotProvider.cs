@@ -1,8 +1,10 @@
 using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
+
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
+
 using Microsoft.Extensions.Options;
 
 namespace LGTVSwitcher.DisplayDetection.Windows;

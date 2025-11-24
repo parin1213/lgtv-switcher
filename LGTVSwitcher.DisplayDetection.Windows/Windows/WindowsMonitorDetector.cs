@@ -17,7 +17,7 @@ public sealed class WindowsMonitorDetector : IDisplayChangeDetector
     private IReadOnlyList<MonitorSnapshot> _lastSnapshot = Array.Empty<MonitorSnapshot>();
     private bool _started;
     private bool _disposed;
-    private ILogger<WindowsMonitorDetector> _logger;
+    private readonly ILogger<WindowsMonitorDetector> _logger;
 
 
     public WindowsMonitorDetector(
