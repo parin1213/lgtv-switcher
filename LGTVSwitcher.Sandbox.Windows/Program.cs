@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.Versioning;
+
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
@@ -8,6 +9,7 @@ using LGTVSwitcher.LgWebOsClient;
 using LGTVSwitcher.LgWebOsClient.Transport;
 using LGTVSwitcher.Sandbox.Windows;
 using LGTVSwitcher.Sandbox.Windows.DisplayDetection;
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -18,6 +20,10 @@ if (!OperatingSystem.IsWindows())
     Console.WriteLine("Display detection prototype currently runs on Windows only.");
     return;
 }
+
+#if DEBUG
+Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+#endif
 
 #pragma warning disable CA1416
 var host = Host.CreateDefaultBuilder(args)
