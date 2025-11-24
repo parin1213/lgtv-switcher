@@ -1,3 +1,5 @@
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Reactive;
 using System.Reactive.Linq;
@@ -86,6 +88,13 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private async Task SyncLgTvAsync(DisplaySnapshot snapshot, CancellationToken cancellationToken)
     {
+        var age = DateTimeOffset.UtcNow - snapshot.Timestamp;
+        if (age > TimeSpan.FromSeconds(5))
+        {
+            _logger.LogDebug("Stale snapshot ({Age}); skipping LG TV sync.", age);
+            return;
+        }
+
         var targetInput = GetTargetInput(snapshot);
         if (string.IsNullOrWhiteSpace(targetInput))
         {
@@ -100,6 +109,12 @@ public sealed class DisplaySyncWorker : BackgroundService
         {
             currentInput = await _lgTvController.GetCurrentInputAsync(cancellationToken).ConfigureAwait(false);
         }
+        catch (Exception ex) when (ex is WebSocketException || ex is HttpRequestException || ex is SocketException)
+        {
+            _logger.LogWarning("LG TV query skipped due to transport error: {Message}", ex.Message);
+            _logger.LogDebug(ex, "Transport exception while querying current input.");
+            return;
+        }
         catch (Exception ex) when (ex is not WebSocketException && !cancellationToken.IsCancellationRequested)
         {
             _logger.LogWarning(ex, "Failed to query current LG TV input; proceeding with switch.");
@@ -113,7 +128,15 @@ public sealed class DisplaySyncWorker : BackgroundService
         }
 
         _logger.LogInformation("Switching LG TV input to {Input} (preferred monitor online = {State})", targetInput, snapshot.PreferredMonitorOnline);
-        await _lgTvController.SwitchInputAsync(targetInput, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _lgTvController.SwitchInputAsync(targetInput, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is WebSocketException || ex is HttpRequestException || ex is SocketException)
+        {
+            _logger.LogWarning("LG TV switch skipped due to transport error: {Message}", ex.Message);
+            _logger.LogDebug(ex, "Transport exception while switching input.");
+        }
     }
 
     private string? GetTargetInput(DisplaySnapshot snapshot)
