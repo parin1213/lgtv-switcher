@@ -27,6 +27,12 @@ Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
 
 #pragma warning disable CA1416
 var host = Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        var localDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var statePath = Path.Combine(localDataPath, "LGTVSwitcher", "device-state.json");
+        config.AddJsonFile(statePath, optional: true, reloadOnChange: true);
+    })
     .ConfigureServices((context, services) => ConfigureServices(context.Configuration, services))
     .UseConsoleLifetime()
     .Build();
@@ -40,8 +46,8 @@ static void ConfigureServices(IConfiguration configuration, IServiceCollection s
 
     services.AddSingleton<ILgTvClientKeyStore>(sp =>
     {
-        var hostEnvironment = sp.GetRequiredService<IHostEnvironment>();
-        var settingsPath = Path.Combine(hostEnvironment.ContentRootPath, "appsettings.json");
+        var localDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var settingsPath = Path.Combine(localDataPath, "LGTVSwitcher", "device-state.json");
         var logger = sp.GetRequiredService<ILogger<FileBasedLgTvClientKeyStore>>();
         return new FileBasedLgTvClientKeyStore(settingsPath, logger);
     });
