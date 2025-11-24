@@ -28,7 +28,7 @@ var host = Host.CreateDefaultBuilder(args)
         config.AddJsonFile(statePath, optional: true, reloadOnChange: true);
     })
     .ConfigureServices((context, services) => ConfigureServices(context.Configuration, services))
-    .UseWindowsService()
+    .UseConsoleLifetime()
     .Build();
 
 await host.RunAsync().ConfigureAwait(false);
