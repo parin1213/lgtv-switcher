@@ -6,4 +6,7 @@
   <Project Path="LGTVSwitcher.DisplayDetection.Windows/LGTVSwitcher.DisplayDetection.Windows.csproj" Id="7527fd25-b68a-4008-89f3-0e4e6a3bfaa3" />
   <Project Path="LGTVSwitcher.Core/LGTVSwitcher.Core.csproj" Id="b1c2475f-0353-4fb8-9bf6-9d79a2d9320e" />
   <Project Path="LGTVSwitcher.LgWebOsClient/LGTVSwitcher.LgWebOsClient.csproj" Id="7d7230a2-8dc1-4e15-a36b-dc6cbf1fdf52" />
+  <Project Path="LGTVSwitcher.Core.Tests/LGTVSwitcher.Core.Tests.csproj" Id="f3b6d2e1-4c7a-4b9e-8c0d-1a2b3c4d5e6f" />
+  <Project Path="LGTVSwitcher.DisplayDetection.Windows.Tests/LGTVSwitcher.DisplayDetection.Windows.Tests.csproj" Id="a1b2c3d4-e5f6-7890-1234-567890abcdef" />
+  <Project Path="LGTVSwitcher.LgWebOsClient.Tests/LGTVSwitcher.LgWebOsClient.Tests.csproj" Id="6f5e4d3c-2b1a-0987-6543-210fedcba987" />
 </Solution>
