@@ -72,7 +72,7 @@ public sealed class WindowsMonitorDetector : IDisplayChangeDetector
             return;
         }
 
-        _logger.LogDebug(
+        _logger.LogInformation(
             "Display snapshot changed. Reason={Reason}, Monitors={@Monitors}",
             reason,
             snapshot);

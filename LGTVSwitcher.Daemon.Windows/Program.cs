@@ -13,6 +13,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using Serilog;
+using Serilog.Events;
+
 if (!OperatingSystem.IsWindows())
 {
     Console.WriteLine("LGTV Switcher Daemon runs on Windows only.");
@@ -21,7 +24,14 @@ if (!OperatingSystem.IsWindows())
 
 #pragma warning disable CA1416 // Windows only
 var host = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration((context, config) =>
+    .UseSerilog((context, services, loggerConfiguration) =>
+    {
+        loggerConfiguration
+            .ReadFrom.Configuration(context.Configuration)
+            .ReadFrom.Services(services)
+            .Enrich.FromLogContext();
+    })
+        .ConfigureAppConfiguration((context, config) =>
     {
         var localDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var statePath = Path.Combine(localDataPath, "LGTVSwitcher", "device-state.json");
