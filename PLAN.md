@@ -141,6 +141,24 @@ LGTVSwitcher.sln
   - [ ] `LgWebOsClient.Tests`: 異常系レスポンスのテスト拡充
   - [ ] CI (GitHub Actions) のセットアップ: ビルドとテストの自動化
 
+## Phase 3.5: Cross-platform readiness（クロスプラットフォーム準備）[Planned]
+
+  - [ ] OS 依存コードの境界整理  
+      - `LGTVSwitcher.Core` / `LGTVSwitcher.DisplayDetection.*` / `LGTVSwitcher.Daemon.*` の責務を明文化  
+      - Core から Windows 固有の API / パス参照を排除する
+
+  - [ ] 設定・ストレージ・ログの共通化  
+      - 設定ファイルや `device-state.json` の配置パスを OS 抽象（例: `IPathProvider` 等）で統一  
+      - ログ設定（Serilog など）を Windows / mac 共通の初期化パターンにまとめる
+
+  - [ ] テストと診断性の補強  
+      - `LgWebOsClient.Tests` を Core と組み合わせたテストに拡張（WebSocket モック利用）  
+      - `--dry-run` など診断モードを追加し、挙動を追いやすくする
+
+  - [ ] 開発・運用ドキュメント整備  
+      - `docs/ARCHITECTURE.md` と簡易 `DEVELOPMENT.md` / `RUNBOOK.md` を作成  
+      - 将来の macOS 実装時に読むべき「事前チェックポイント」を明記する
+
 ## Phase 4: macOS 対応 [Planned]
 
   - [ ] `LGTVSwitcher.DisplayDetection.Mac`
