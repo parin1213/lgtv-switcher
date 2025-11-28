@@ -28,6 +28,16 @@ public class LgTvResponseParserTests
     }
 
     [Fact]
+    public void ParseCurrentInput_InvalidJson_ReturnsNull()
+    {
+        var parser = new LgTvResponseParser(new NullLogger<LgTvResponseParser>());
+
+        var input = parser.ParseCurrentInput("not-json");
+
+        Assert.Null(input);
+    }
+
+    [Fact]
     public void ParseRegistrationResponse_RegisteredWithClientKey()
     {
         var parser = new LgTvResponseParser(new NullLogger<LgTvResponseParser>());
@@ -48,5 +58,24 @@ public class LgTvResponseParserTests
         var result = parser.ParseRegistrationResponse(json);
 
         Assert.Equal(LgTvRegistrationStatus.RequiresPrompt, result.Status);
+    }
+
+    [Fact]
+    public void ParseRegistrationResponse_ReturnValueFalse_TreatedAsResponse()
+    {
+        var parser = new LgTvResponseParser(new NullLogger<LgTvResponseParser>());
+        var json = """{"type":"response","payload":{"returnValue":false}}""";
+
+        var result = parser.ParseRegistrationResponse(json);
+
+        Assert.Equal(LgTvRegistrationStatus.Response, result.Status);
+    }
+
+    [Fact]
+    public void ParseResponse_InvalidJson_ThrowsCommandException()
+    {
+        var parser = new LgTvResponseParser(new NullLogger<LgTvResponseParser>());
+
+        Assert.Throws<LgTvCommandException>(() => parser.ParseResponse("not-json", "test-uri"));
     }
 }
