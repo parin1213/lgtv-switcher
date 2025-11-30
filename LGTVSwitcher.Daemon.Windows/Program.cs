@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 
+using LGTVSwitcher.Core;
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
@@ -31,7 +32,7 @@ var host = Host.CreateDefaultBuilder(args)
             .ReadFrom.Services(services)
             .Enrich.FromLogContext();
     })
-        .ConfigureAppConfiguration((context, config) =>
+    .ConfigureAppConfiguration((context, config) =>
     {
         var localDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var statePath = Path.Combine(localDataPath, "LGTVSwitcher", "device-state.json");
@@ -47,13 +48,15 @@ await host.RunAsync().ConfigureAwait(false);
 [SupportedOSPlatform("windows")]
 static void ConfigureServices(IConfiguration configuration, IServiceCollection services)
 {
+    services.AddSingleton<IAppPathProvider, WindowsPathProvider>();
+
     services.Configure<LgTvSwitcherOptions>(configuration.GetSection("LgTvSwitcher"));
 
     services.AddSingleton<ILgTvClientKeyStore>(sp =>
     {
         var logger = sp.GetRequiredService<ILogger<FileBasedLgTvClientKeyStore>>();
-        var localDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var storagePath = Path.Combine(localDataPath, "LGTVSwitcher", "device-state.json");
+        var pathProvider = sp.GetRequiredService<IAppPathProvider>();
+        var storagePath = pathProvider.GetStateFilePath();
         return new FileBasedLgTvClientKeyStore(storagePath, logger);
     });
 

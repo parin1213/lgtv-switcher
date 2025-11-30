@@ -138,12 +138,12 @@ LGTVSwitcher.sln
 ## Phase 3: テストと品質向上 [現在進行中]
 
   - [x] `Core.Tests`: Rx パイプラインの単体テスト（Fakeプロバイダを使用）
-  - [ ] `LgWebOsClient.Tests`: 異常系レスポンスのテスト拡充
-  - [ ] CI (GitHub Actions) のセットアップ: ビルドとテストの自動化
+  - [x] `LgWebOsClient.Tests`: 異常系レスポンスのテスト拡充
+  - [x] CI (GitHub Actions) のセットアップ: ビルドとテストの自動化
 
 ## Phase 3.5: Cross-platform readiness（クロスプラットフォーム準備）[Planned]
 
-  - [ ] OS 依存コードの境界整理  
+  - [x] OS 依存コードの境界整理  
       - `LGTVSwitcher.Core` / `LGTVSwitcher.DisplayDetection.*` / `LGTVSwitcher.Daemon.*` の責務を明文化  
       - Core から Windows 固有の API / パス参照を排除する
 
