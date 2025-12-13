@@ -29,8 +29,13 @@
       - `IDisplaySnapshotProvider` → `IObservable<DisplaySnapshot>` → `DisplaySyncWorker`
       - 従来のイベント駆動ではなく、**Reactive Extensions (Rx)** を用いたストリーム処理で、短時間の接続フラつき（チャタリング）除去や状態比較を行う
   - **設定と状態の分離**
-      - **設定 (`appsettings.json`):** ユーザーが編集する静的な設定（TVのIP、ターゲット入力端子など）
-      - **状態 (`device-state.json`):** アプリが管理する動的な情報（ペアリング済み `ClientKey`）。`%LOCALAPPDATA%` に分離して保存する。
+      - **設定 (`appsettings.json`):** ユーザーが編集する静的な設定（ターゲット入力端子、監視モニター、ログなど）。TVのホスト名/IP は基本設定せず、SSDP 探索で自動検出する（互換用途で `TvHost` は残す）。
+      - **状態 (`device-state.json`):** アプリが管理する動的な情報（ペアリング済み `ClientKey`、接続先TVの `USN` など）。`%LOCALAPPDATA%` に分離して保存する。
+  - **TV自動検出と接続先固定（SSDP必須 / USN固定）**
+      - 起動時に SSDP `M-SEARCH` を送信し、webOS TV候補の `USN` と `LOCATION`（および送信元IP）を収集する。
+      - `device-state.json` に `PreferredTvUsn` が存在する場合は、その `USN` に一致するTVへ接続する（`TvHost` は使用しない）。
+      - `PreferredTvUsn` が未設定で `ClientKey` が存在する場合は、候補TVに対して登録（register）を試行し、`Registered` になったTVの `USN` を `PreferredTvUsn` として永続化する。
+      - 初回（`ClientKey`/`PreferredTvUsn`なし）で複数台が見つかった場合は、誤ったTVにペアリングプロンプトを出さないため、`--pair` 等の診断モードで対象を選択して `PreferredTvUsn` を保存する。
 
 -----
 
@@ -140,6 +145,10 @@ LGTVSwitcher.sln
   - [x] `Core.Tests`: Rx パイプラインの単体テスト（Fakeプロバイダを使用）
   - [x] `LgWebOsClient.Tests`: 異常系レスポンスのテスト拡充
   - [x] CI (GitHub Actions) のセットアップ: ビルドとテストの自動化
+  - [ ] 複数TV環境対応（SSDP探索 + USN固定）
+      - SSDP による自動検出（`M-SEARCH` / 応答解析 / `USN` での重複排除）
+      - `device-state.json` に `PreferredTvUsn` を永続化し、以後は `USN` 一致のTVにのみ接続
+      - 初回向けに `--discover` / `--pair` の診断モードを追加（一覧表示・選択・保存）
 
 ## Phase 3.5: Cross-platform readiness（クロスプラットフォーム準備）[Planned]
 

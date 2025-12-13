@@ -20,7 +20,17 @@ public sealed class FileBasedLgTvClientKeyStore : ILgTvClientKeyStore
 
     public async Task PersistClientKeyAsync(string clientKey, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(clientKey))
+        await PersistStateAsync(clientKey, preferredTvUsn: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task PersistPreferredTvUsnAsync(string preferredTvUsn, CancellationToken cancellationToken)
+    {
+        await PersistStateAsync(clientKey: null, preferredTvUsn, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task PersistStateAsync(string? clientKey, string? preferredTvUsn, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(clientKey) && string.IsNullOrWhiteSpace(preferredTvUsn))
         {
             return;
         }
@@ -45,7 +55,15 @@ public sealed class FileBasedLgTvClientKeyStore : ILgTvClientKeyStore
 
         var section = rootObject["LgTvSwitcher"] as JsonObject ?? new JsonObject();
         rootObject["LgTvSwitcher"] = section;
-        section["ClientKey"] = clientKey;
+        if (!string.IsNullOrWhiteSpace(clientKey))
+        {
+            section["ClientKey"] = clientKey;
+        }
+
+        if (!string.IsNullOrWhiteSpace(preferredTvUsn))
+        {
+            section["PreferredTvUsn"] = preferredTvUsn;
+        }
 
         var directory = Path.GetDirectoryName(_filePath);
         if (!string.IsNullOrEmpty(directory))
@@ -59,6 +77,6 @@ public sealed class FileBasedLgTvClientKeyStore : ILgTvClientKeyStore
         });
 
         await File.WriteAllTextAsync(_filePath, updatedJson, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Persisted client-key to {Path}", _filePath);
+        _logger.LogInformation("Persisted client state to {Path}", _filePath);
     }
 }

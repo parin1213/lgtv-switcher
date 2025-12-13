@@ -18,6 +18,11 @@ public sealed class LgTvSwitcherOptions
     public string? ClientKey { get; set; }
 
     /// <summary>
+    /// SSDP で検出した TV の USN。複数台環境で接続先を固定するために使用する。
+    /// </summary>
+    public string? PreferredTvUsn { get; set; }
+
+    /// <summary>
     /// 優先モニタがオンラインのときに切り替える入力 ID。
     /// </summary>
     public string TargetInputId { get; set; } = "HDMI_1";

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -19,9 +20,12 @@ public sealed class LgTvController : ILgTvController
     private readonly ILgTvTransport _transport;
     private readonly LgTvSwitcherOptions _options;
     private readonly ILogger<LgTvController> _logger;
+    private readonly ILgTvDiscoveryService _discoveryService;
     private readonly ILgTvClientKeyStore? _clientKeyStore;
     private readonly ILgTvResponseParser _responseParser;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
+    private string? _activeHost;
+    private string? _activeUsn;
     private bool _isRegistered;
 
     public LgTvController(
@@ -29,12 +33,14 @@ public sealed class LgTvController : ILgTvController
         IOptions<LgTvSwitcherOptions> options,
         ILogger<LgTvController> logger,
         ILgTvResponseParser responseParser,
+        ILgTvDiscoveryService discoveryService,
         ILgTvClientKeyStore? clientKeyStore = null)
     {
         _transport = transport;
         _options = options.Value;
         _logger = logger;
         _responseParser = responseParser;
+        _discoveryService = discoveryService;
         _clientKeyStore = clientKeyStore;
     }
 
@@ -50,17 +56,15 @@ public sealed class LgTvController : ILgTvController
 
         try
         {
-            if (_transport.State != WebSocketState.Open)
-            {
-                var uri = new Uri($"wss://{_options.TvHost}:{_options.TvPort}");
-                _logger.LogInformation("Connecting to LG TV at {Uri}", uri);
-                await _transport.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
-                _isRegistered = false;
-            }
-
-            if (_isRegistered)
+            if (_transport.State == WebSocketState.Open && _isRegistered)
             {
                 return null;
+            }
+
+            var candidates = await ResolveCandidatesAsync(cancellationToken).ConfigureAwait(false);
+            if (candidates.Count == 0)
+            {
+                throw new LgTvRegistrationException("No LG TV discovered via SSDP or configuration.");
             }
 
             if (string.IsNullOrWhiteSpace(_options.ClientKey))
@@ -68,25 +72,47 @@ public sealed class LgTvController : ILgTvController
                 _logger.LogInformation("No client-key configured. Accept the pairing prompt on the TV to continue.");
             }
 
-            var registrationResult = await SendRegistrationAsync(cancellationToken).ConfigureAwait(false);
+            Exception? lastError = null;
 
-            if (registrationResult.Status != LgTvRegistrationStatus.Registered)
+            foreach (var candidate in candidates)
             {
-                throw new LgTvRegistrationException("LG TV registration did not succeed. Check the TV prompt and try again.");
-            }
-
-            if (!string.IsNullOrWhiteSpace(registrationResult.ClientKey))
-            {
-                _options.ClientKey = registrationResult.ClientKey;
-                _logger.LogInformation("Received client-key from LG TV. Store this value for future runs.");
-                if (_clientKeyStore is not null)
+                try
                 {
-                    await _clientKeyStore.PersistClientKeyAsync(registrationResult.ClientKey!, cancellationToken).ConfigureAwait(false);
+                    await ConnectTransportAsync(candidate, cancellationToken).ConfigureAwait(false);
+
+                    var registrationResult = await SendRegistrationAsync(cancellationToken).ConfigureAwait(false);
+
+                    if (registrationResult.Status != LgTvRegistrationStatus.Registered)
+                    {
+                        throw new LgTvRegistrationException("LG TV registration did not succeed. Check the TV prompt and try again.");
+                    }
+
+                    await PersistRegistrationStateAsync(registrationResult, candidate, cancellationToken).ConfigureAwait(false);
+
+                    _isRegistered = true;
+                    return registrationResult.RawJson;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is LgTvRegistrationException || ex is WebSocketException || ex is IOException)
+                {
+                    lastError = ex;
+                    _logger.LogWarning(ex, "Failed to connect/register with LG TV at {Host}. Trying next candidate.", candidate.Host);
+                    _isRegistered = false;
+                    _activeHost = null;
+                    _activeUsn = null;
+                    await _transport.DisposeAsync().ConfigureAwait(false);
                 }
             }
 
-            _isRegistered = true;
-            return registrationResult.RawJson;
+            if (lastError is not null)
+            {
+                throw new LgTvRegistrationException("Failed to register with any discovered LG TV.", lastError);
+            }
+
+            throw new LgTvRegistrationException("Failed to register with any discovered LG TV.");
         }
         finally
         {
@@ -117,6 +143,96 @@ public sealed class LgTvController : ILgTvController
 
         var payloadJson = payloadElement.HasValue ? payloadElement.Value.GetRawText() : null;
         return _responseParser.ParseCurrentInput(payloadJson);
+    }
+
+    private async Task ConnectTransportAsync(LgTvEndpoint endpoint, CancellationToken cancellationToken)
+    {
+        var uri = new Uri($"wss://{endpoint.Host}:{_options.TvPort}");
+        _logger.LogInformation("Connecting to LG TV at {Uri}", uri);
+        if (_transport.State == WebSocketState.Open)
+        {
+            await _transport.DisposeAsync().ConfigureAwait(false);
+        }
+
+        await _transport.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
+        _activeHost = endpoint.Host;
+        _activeUsn = endpoint.Usn;
+        _isRegistered = false;
+    }
+
+    private async Task<IReadOnlyList<LgTvEndpoint>> ResolveCandidatesAsync(CancellationToken cancellationToken)
+    {
+        var discovered = await _discoveryService.DiscoverAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(_options.PreferredTvUsn))
+        {
+            var match = discovered.FirstOrDefault(r =>
+                !string.IsNullOrWhiteSpace(r.Usn) &&
+                string.Equals(r.Usn, _options.PreferredTvUsn, StringComparison.OrdinalIgnoreCase));
+
+            if (match is not null)
+            {
+                return new[] { ToEndpoint(match) };
+            }
+
+            _logger.LogWarning("PreferredTvUsn {Usn} was not found via SSDP discovery. Falling back to discovered candidates.", _options.PreferredTvUsn);
+        }
+
+        if (discovered.Count > 0)
+        {
+            return discovered.Select(ToEndpoint).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(_options.TvHost))
+        {
+            _logger.LogWarning("No LG TV discovered via SSDP. Falling back to configured TvHost {Host}.", _options.TvHost);
+            return new[] { new LgTvEndpoint(_options.TvHost, null, null) };
+        }
+
+        return Array.Empty<LgTvEndpoint>();
+    }
+
+    private async Task PersistRegistrationStateAsync(
+        LgTvRegistrationResponse registrationResult,
+        LgTvEndpoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(registrationResult.ClientKey))
+        {
+            _options.ClientKey = registrationResult.ClientKey;
+            _logger.LogInformation("Received client-key from LG TV. Store this value for future runs.");
+            if (_clientKeyStore is not null)
+            {
+                await _clientKeyStore.PersistClientKeyAsync(registrationResult.ClientKey!, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(endpoint.Usn))
+        {
+            _options.PreferredTvUsn = endpoint.Usn;
+            if (_clientKeyStore is not null)
+            {
+                await _clientKeyStore.PersistPreferredTvUsnAsync(endpoint.Usn!, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static LgTvEndpoint ToEndpoint(LgTvDiscoveryResult result)
+    {
+        var host = TryGetHostFromLocation(result.Location) ?? result.Address;
+        return new LgTvEndpoint(host, result.Usn, result.Location);
+    }
+
+    private static string? TryGetHostFromLocation(string? location)
+    {
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return null;
+        }
+
+        return Uri.TryCreate(location, UriKind.Absolute, out var uri)
+            ? uri.Host
+            : null;
     }
 
     private async Task<JsonElement?> SendRequestAndGetResponsePayloadAsync(
@@ -166,7 +282,8 @@ public sealed class LgTvController : ILgTvController
 
         if (IsErrorResponse(responseEnvelope, out var errorMessage))
         {
-            throw new LgTvCommandException($"LG TV returned an error for '{uri}' on {_options.TvHost}:{_options.TvPort}: {errorMessage}");
+            var hostForLog = _activeHost ?? _options.TvHost;
+            throw new LgTvCommandException($"LG TV returned an error for '{uri}' on {hostForLog}:{_options.TvPort}: {errorMessage}");
         }
 
         return responseEnvelope.Payload.ValueKind != JsonValueKind.Undefined
@@ -265,6 +382,8 @@ public sealed class LgTvController : ILgTvController
         _connectionLock.Dispose();
         return _transport.DisposeAsync();
     }
+
+    private sealed record LgTvEndpoint(string Host, string? Usn, string? Location);
 
     private static class LgTvUris
     {
