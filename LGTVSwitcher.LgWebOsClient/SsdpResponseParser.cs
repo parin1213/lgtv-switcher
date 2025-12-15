@@ -13,7 +13,7 @@ public sealed class SsdpResponseParser : ISsdpResponseParser
             return null;
         }
 
-        var lines = responseText.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        var lines = responseText.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
         if (lines.Length == 0)
         {
             return null;
