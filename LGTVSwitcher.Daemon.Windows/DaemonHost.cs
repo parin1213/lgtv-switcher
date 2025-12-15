@@ -53,7 +53,9 @@ internal static class DaemonHost
 
         services.AddSingleton<ILgTvTransport, DefaultWebSocketTransport>();
         services.AddSingleton<ILgTvResponseParser, LgTvResponseParser>();
+        services.AddSingleton<ISsdpResponseParser, SsdpResponseParser>();
         services.AddSingleton<ILgTvDiscoveryService, SsdpLgTvDiscoveryService>();
+        services.AddSingleton<ILgTvSession, LgTvSession>();
         services.AddSingleton<ILgTvController, LgTvController>();
 
         services.AddSingleton<WindowsMessagePump>();

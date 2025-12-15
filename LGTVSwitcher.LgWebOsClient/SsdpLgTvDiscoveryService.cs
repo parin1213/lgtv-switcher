@@ -28,10 +28,14 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
     private const int MulticastPort = 1900;
 
     private readonly ILogger<SsdpLgTvDiscoveryService> _logger;
+    private readonly ISsdpResponseParser _parser;
 
-    public SsdpLgTvDiscoveryService(ILogger<SsdpLgTvDiscoveryService> logger)
+    public SsdpLgTvDiscoveryService(
+        ILogger<SsdpLgTvDiscoveryService> logger,
+        ISsdpResponseParser parser)
     {
         _logger = logger;
+        _parser = parser;
     }
 
     public async Task<IReadOnlyList<LgTvDiscoveryResult>> DiscoverAsync(CancellationToken cancellationToken)
@@ -43,7 +47,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
             return Array.Empty<LgTvDiscoveryResult>();
         }
 
-        var allResponses = new List<ParsedResponse>();
+        var allResponses = new List<DiscoveredResponse>();
         var dedupKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sequence = 0;
 
@@ -59,13 +63,13 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
         return aggregated;
     }
 
-    private async Task<(List<ParsedResponse> Responses, int NextSequence)> DiscoverOnInterfaceAsync(
+    private async Task<(List<DiscoveredResponse> Responses, int NextSequence)> DiscoverOnInterfaceAsync(
         LocalInterface nic,
         HashSet<string> dedupKeys,
         int startSequence,
         CancellationToken cancellationToken)
     {
-        var collected = new List<ParsedResponse>();
+        var collected = new List<DiscoveredResponse>();
         var sequence = startSequence;
 
         try
@@ -97,11 +101,11 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
                 if (remaining <= TimeSpan.Zero)
                 {
                     break;
-            }
+                }
 
-            UdpReceiveResult response;
-            try
-            {
+                UdpReceiveResult response;
+                try
+                {
                     using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     cts.CancelAfter(remaining);
                     response = await udp.ReceiveAsync(cts.Token).ConfigureAwait(false);
@@ -116,34 +120,28 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
                     break;
                 }
 
-            recvCount++;
-            var head = GetFirstLine(response.Buffer);
-            _logger.LogDebug("SSDP recv from {Addr}:{Port} -> {LocalIp}:{LocalPort} bytes={Len} head={Head}",
-                response.RemoteEndPoint.Address, response.RemoteEndPoint.Port, nic.Address, localEndpoint.Port, response.Buffer.Length, head);
+                recvCount++;
+                var head = GetFirstLine(response.Buffer);
+                _logger.LogDebug("SSDP recv from {Addr}:{Port} -> {LocalIp}:{LocalPort} bytes={Len} head={Head}",
+                    response.RemoteEndPoint.Address, response.RemoteEndPoint.Port, nic.Address, localEndpoint.Port, response.Buffer.Length, head);
 
-            if (!TryParseResponse(response, out var parsed, out var parseRejectionReason) || parsed is null)
-            {
-                rejected++;
-                _logger.LogDebug("SSDP rejected from {Addr}:{Port} on {LocalIp} reason={Reason}",
-                    response.RemoteEndPoint.Address, response.RemoteEndPoint.Port, nic.Address, parseRejectionReason);
-                continue;
-            }
+                var responseText = Encoding.UTF8.GetString(response.Buffer);
+                var parsed = _parser.Parse(responseText, response.RemoteEndPoint);
+                if (parsed is null)
+                {
+                    rejected++;
+                    _logger.LogDebug("SSDP rejected from {Addr}:{Port} on {LocalIp} head={Head}",
+                        response.RemoteEndPoint.Address, response.RemoteEndPoint.Port, nic.Address, head);
+                    continue;
+                }
 
-            _logger.LogDebug("SSDP parsed ST={St} USN={Usn} LOCATION={Location} SERVER={Server}", parsed.St, parsed.Usn, parsed.Location, parsed.Server);
-
-            if (!LooksLikeLgTv(parsed, out var reason))
-            {
-                rejected++;
-                _logger.LogDebug("SSDP rejected from {Addr}:{Port} on {LocalIp} reason={Reason} ST={St} USN={Usn} LOCATION={Location} SERVER={Server}",
-                    response.RemoteEndPoint.Address, response.RemoteEndPoint.Port, nic.Address, reason, parsed.St, parsed.Usn, parsed.Location, parsed.Server);
-                continue;
-            }
+                _logger.LogDebug("SSDP parsed ST={St} USN={Usn} LOCATION={Location} SERVER={Server}", parsed.St, parsed.Usn, parsed.Location, parsed.Server);
 
                 var dedupKey = BuildDedupKey(parsed);
                 if (dedupKeys.Add(dedupKey))
                 {
                     accepted++;
-                    collected.Add(parsed with { Sequence = sequence++ });
+                    collected.Add(new DiscoveredResponse(parsed, sequence++));
                     _logger.LogDebug("Discovered LG TV candidate: USN={Usn}, IP={Ip}, ST={St}, LOCATION={Location}", parsed.Usn, parsed.Address, parsed.St, parsed.Location);
                 }
             }
@@ -159,30 +157,20 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
         return (collected, sequence);
     }
 
-    private static IReadOnlyList<LgTvDiscoveryResult> AggregateByAddress(IEnumerable<ParsedResponse> responses)
+    private IReadOnlyList<LgTvDiscoveryResult> AggregateByAddress(IEnumerable<DiscoveredResponse> responses)
     {
         var results = new List<LgTvDiscoveryResult>();
-        foreach (var group in responses.GroupBy(r => r.Address))
+        foreach (var group in responses.GroupBy(r => r.Result.Address))
         {
             var best = group
-                .OrderByDescending(r => GetPriority(r.St))
+                .OrderByDescending(r => _parser.GetPriority(r.Result.St))
                 .ThenBy(r => r.Sequence)
                 .First();
 
-            results.Add(new LgTvDiscoveryResult(group.Key, best.Location, best.Usn, best.Server, best.St));
+            results.Add(best.Result);
         }
 
         return results;
-    }
-
-    private static int GetPriority(string? st)
-    {
-        return st switch
-        {
-            { } when st.Equals("urn:lge-com:service:webos-second-screen:1", StringComparison.OrdinalIgnoreCase) => 2,
-            { } when st.Equals("upnp:rootdevice", StringComparison.OrdinalIgnoreCase) => 1,
-            _ => 0
-        };
     }
 
     private static byte[] BuildMSearch(string st)
@@ -202,86 +190,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
         return Encoding.UTF8.GetBytes(string.Join("\r\n", lines));
     }
 
-    private static bool TryParseResponse(UdpReceiveResult response, out ParsedResponse? parsed, out string rejectionReason)
-    {
-        parsed = null;
-        rejectionReason = string.Empty;
-        var text = Encoding.UTF8.GetString(response.Buffer);
-        var lines = text.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length == 0)
-        {
-            rejectionReason = "Empty response text";
-            return false;
-        }
-
-        var firstLine = lines[0];
-        if (!firstLine.StartsWith("HTTP/1.1 200", StringComparison.OrdinalIgnoreCase))
-        {
-            rejectionReason = $"Unexpected status line '{firstLine}'";
-            return false;
-        }
-
-        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var line in lines.Skip(1))
-        {
-            var index = line.IndexOf(':');
-            if (index <= 0)
-            {
-                continue;
-            }
-
-            var key = line[..index].Trim();
-            var value = line[(index + 1)..].Trim();
-            if (!headers.ContainsKey(key))
-            {
-                headers[key] = value;
-            }
-        }
-
-        headers.TryGetValue("ST", out var st);
-        headers.TryGetValue("USN", out var usn);
-        headers.TryGetValue("LOCATION", out var location);
-        headers.TryGetValue("SERVER", out var server);
-
-        var address = response.RemoteEndPoint.Address.ToString();
-        parsed = new ParsedResponse(address, st, usn, location, server);
-        if (string.IsNullOrWhiteSpace(st) && string.IsNullOrWhiteSpace(usn) && string.IsNullOrWhiteSpace(location))
-        {
-            rejectionReason = "Missing SSDP headers ST/USN/LOCATION";
-            return false;
-        }
-
-        rejectionReason = string.Empty;
-        return true;
-    }
-
-    private static bool LooksLikeLgTv(ParsedResponse parsed, out string reason)
-    {
-        reason = string.Empty;
-
-        var st = (parsed.St ?? string.Empty).ToLowerInvariant();
-        var usn = (parsed.Usn ?? string.Empty).ToLowerInvariant();
-        var server = (parsed.Server ?? string.Empty).ToLowerInvariant();
-
-        static bool ContainsAny(string source, params string[] keywords)
-            => keywords.Any(k => source.Contains(k, StringComparison.OrdinalIgnoreCase));
-
-        if (ContainsAny(server, "webos", "lg"))
-        {
-            return true;
-        }
-
-        if (ContainsAny(st, "lge", "webos", "dial", "multiscreen", "mediarenderer") ||
-            ContainsAny(usn, "lge", "webos", "dial", "multiscreen", "mediarenderer"))
-        {
-            return true;
-        }
-
-        reason = "No LG webOS markers in SERVER/ST/USN";
-        return false;
-    }
-
-    private static string BuildDedupKey(ParsedResponse parsed)
+    private static string BuildDedupKey(LgTvDiscoveryResult parsed)
     {
         var usnPart = string.IsNullOrWhiteSpace(parsed.Usn) ? string.Empty : parsed.Usn;
         return $"{parsed.Address}|{usnPart}";
@@ -335,13 +244,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
         return bytes.Length >= 2 && bytes[0] == 169 && bytes[1] == 254;
     }
 
-    private sealed record ParsedResponse(
-        string Address,
-        string? St,
-        string? Usn,
-        string? Location,
-        string? Server,
-        int Sequence = 0);
+    private sealed record DiscoveredResponse(LgTvDiscoveryResult Result, int Sequence);
 
     private sealed record LocalInterface(string Name, IPAddress Address);
 }
