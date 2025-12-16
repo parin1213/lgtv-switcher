@@ -1,0 +1,45 @@
+{
+  // ベースとなる設定を読み込む
+  "extends": [
+    "config:base"
+  ],
+
+  // Dependency Dashboard を無効化する
+  "dependencyDashboard": false,
+
+  // ステータスチェックを行わない
+  "requiredStatusChecks": null,
+
+  // Renovate の更新を毎日 09:00-11:59 の間に１時間ごとに行う
+  "schedule": [
+    "every 1 hour after 09:00 and before 11:59 every day"
+  ],
+
+  // PR の生成と自動マージを毎日 09:00-11:59 の間に１時間ごとに行う
+  "automergeSchedule": [
+    "every 1 hour after 09:00 and before 11:59 every day"
+  ],
+
+  // major の更新は有効にするが自動マージはしない
+  "major": {
+    "enabled": true,
+    "automerge": false
+  },
+
+  // パッケージごとのルール決め
+  "packageRules": [
+    {
+      // `major` 以外の PR は自動マージとする
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      // `major` 以外の PR は自動マージとする
+      // 加えて `nuget` という文字列にマッチした場合はグループ化する
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchPackagePatterns": ["nuget"],
+      "groupName": "nuget",
+      "automerge": true
+    }
+  ]
+}
