@@ -26,7 +26,7 @@ try {
     $serviceName = "LGTVSwitcher"          # 旧サービス名
     $taskName = "LGTVSwitcherTask"         # 新タスク名
     
-    $projectPath = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "LGTVSwitcher.Daemon.Windows/LGTVSwitcher.Daemon.Windows.csproj"
+    $projectPath = Join-Path -Path (Split-Path -Parent $PSScriptRoot) -ChildPath "src/LGTVSwitcher.Daemon.Windows/LGTVSwitcher.Daemon.Windows.csproj"
     $installDir = "C:\Tools\LGTVSwitcher"
     
     # ---------------------------------------------------------

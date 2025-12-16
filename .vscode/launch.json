@@ -5,9 +5,9 @@
       "type": "coreclr",
       "request": "launch",
       "preLaunchTask": "dotnet: build",
-      "program": "${workspaceFolder}/LGTVSwitcher.Daemon.Windows/bin/Debug/net10.0-windows/LGTVSwitcher.Daemon.Windows.exe",
+      "program": "${workspaceFolder}/src/LGTVSwitcher.Daemon.Windows/bin/Debug/net10.0-windows/LGTVSwitcher.Daemon.Windows.exe",
       "args": [],
-      "cwd": "${workspaceFolder}/LGTVSwitcher.Daemon.Windows",
+      "cwd": "${workspaceFolder}/src/LGTVSwitcher.Daemon.Windows",
       "env": {
         "DOTNET_ENVIRONMENT": "Development"
       }

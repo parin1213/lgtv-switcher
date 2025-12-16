@@ -1,0 +1,7 @@
+<Project>
+  <!-- 共通ビルド設定 -->
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

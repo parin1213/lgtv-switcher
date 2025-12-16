@@ -91,7 +91,7 @@ gsudo .\scripts\sudo-uninstall.bat
 dotnet build
 
 # 実行
-cd LGTVSwitcher.Daemon.Windows\bin\Debug\net10.0-windows
+cd src/LGTVSwitcher.Daemon.Windows\bin\Debug\net10.0-windows
 .\LGTVSwitcher.Daemon.Windows.exe
 ```
 

@@ -20,7 +20,7 @@ jobs:
           include-prerelease: true
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore lgtv-switcher.slnx
 
       - name: Build
         run: dotnet build lgtv-switcher.slnx -c Release --no-restore

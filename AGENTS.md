@@ -11,7 +11,7 @@
 ## ビルド・実行
 - `dotnet build lgtv-switcher.slnx`
 - `dotnet test` （各テストプロジェクト）
-- Daemon: `dotnet run --project LGTVSwitcher.Daemon.Windows`
+- Daemon: `dotnet run --project src/LGTVSwitcher.Daemon.Windows`
 - インストールスクリプト: `scripts/install.ps1`（管理者）、アンインストール: `scripts/uninstall.ps1`
 
 ## コーディングスタイル

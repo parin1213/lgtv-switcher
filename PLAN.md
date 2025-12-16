@@ -74,7 +74,7 @@
 # 2. ソリューション／パッケージ構成
 
 ```text
-LGTVSwitcher.sln
+lgtv-switcher.slnx
   ├─ src/
   │   ├─ LGTVSwitcher.Core/                    # [共通] ドメインモデル, Rxワーカー, 設定定義
   │   ├─ LGTVSwitcher.LgWebOsClient/           # [共通] webOS WebSocketクライアント
@@ -205,7 +205,7 @@ Rx パイプラインのテストを最重要視する。実際の時間は待�
 dotnet build
 
 # Daemon (デバッグ実行)
-cd LGTVSwitcher.Daemon.Windows/bin/Debug/net10.0-windows
+cd src/LGTVSwitcher.Daemon.Windows/bin/Debug/net10.0-windows
 ./LGTVSwitcher.Daemon.Windows.exe
 ```
 

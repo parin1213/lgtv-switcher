@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 
 try {
     Write-Host "dotnet restore..." -ForegroundColor Cyan
-    dotnet restore
+    dotnet restore lgtv-switcher.slnx
 
     Write-Host "dotnet build (Release)..." -ForegroundColor Cyan
     dotnet build lgtv-switcher.slnx -c Release
