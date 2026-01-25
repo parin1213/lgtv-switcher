@@ -42,6 +42,32 @@ public class DisplaySyncWorkerTests
     }
 
     [Fact]
+    public async Task StartAsync_ShouldProcessInitialSnapshot()
+    {
+        var provider = new FakeSnapshotProvider
+        {
+            InitialNotification = new DisplaySnapshotNotification(CreateSnapshot(online: true), "initial")
+        };
+        var controller = new FakeLgTvController();
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "Expected a switch to HDMI_4.");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task StaleSnapshot_ShouldBeIgnored()
     {
         var provider = new FakeSnapshotProvider();
@@ -117,6 +143,57 @@ public class DisplaySyncWorkerTests
     }
 
     [Fact]
+    public async Task CurrentInputNotAllowed_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_1" };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            AllowedCurrentInputIds = new[] { "HDMI_2" },
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "not-allowed"));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task CurrentInputAllowed_ShouldSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_2" };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            AllowedCurrentInputIds = new[] { "HDMI_2" },
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "allowed"));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "Expected a switch to HDMI_4.");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task MissingEdidKey_ShouldBeIgnored()
     {
         var provider = new FakeSnapshotProvider();
@@ -137,6 +214,33 @@ public class DisplaySyncWorkerTests
         await Task.Delay(1200);
 
         Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task SyncInterval_ShouldReevaluateWithoutDisplayChange()
+    {
+        var provider = new FakeSnapshotProvider
+        {
+            InitialNotification = new DisplaySnapshotNotification(CreateSnapshot(online: true), "initial")
+        };
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            SyncIntervalSeconds = 1,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+
+        var queried = await WaitForQueryCountAsync(controller, minimumCount: 2);
+        Assert.True(queried, "Expected a periodic query to be executed.");
 
         await worker.StopAsync(CancellationToken.None);
     }
@@ -293,12 +397,17 @@ public class DisplaySyncWorkerTests
     {
         private readonly Subject<DisplaySnapshotNotification> _subject = new();
         public bool Started { get; private set; }
+        public DisplaySnapshotNotification? InitialNotification { get; set; }
 
         public IObservable<DisplaySnapshotNotification> Notifications => _subject;
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
             Started = true;
+            if (InitialNotification is not null)
+            {
+                _subject.OnNext(InitialNotification);
+            }
             return Task.CompletedTask;
         }
 
@@ -335,12 +444,29 @@ public class DisplaySyncWorkerTests
         return controller.SwitchCalls.Any(predicate);
     }
 
+    private static async Task<bool> WaitForQueryCountAsync(FakeLgTvController controller, int minimumCount, int timeoutMs = 7000)
+    {
+        var start = DateTimeOffset.UtcNow;
+        while ((DateTimeOffset.UtcNow - start).TotalMilliseconds < timeoutMs)
+        {
+            if (controller.QueryCalls >= minimumCount)
+            {
+                return true;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return controller.QueryCalls >= minimumCount;
+    }
+
     private sealed class FakeLgTvController : ILgTvController
     {
         public List<string> SwitchCalls { get; } = new();
         public string? CurrentInput { get; set; }
         public Exception? QueryException { get; set; }
         public Exception? SwitchException { get; set; }
+        public int QueryCalls { get; private set; }
 
         public Task<string?> EnsureConnectedAsync(CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
@@ -348,6 +474,7 @@ public class DisplaySyncWorkerTests
 
         public Task<string?> GetCurrentInputAsync(CancellationToken cancellationToken)
         {
+            QueryCalls++;
             if (QueryException is not null)
             {
                 throw QueryException;

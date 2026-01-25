@@ -21,6 +21,8 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly ILgTvController _lgTvController;
     private readonly ILogger<DisplaySyncWorker> _logger;
     private readonly LgTvSwitcherOptions _options;
+    private readonly string[] _allowedCurrentInputIds;
+    private readonly TimeSpan? _syncInterval;
     private IDisposable? _subscription;
 
     public DisplaySyncWorker(
@@ -33,23 +35,37 @@ public sealed class DisplaySyncWorker : BackgroundService
         _lgTvController = lgTvController;
         _logger = logger;
         _options = options.Value;
+        _allowedCurrentInputIds = _options.AllowedCurrentInputIds?
+            .Select(id => id?.Trim())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .OfType<string>()
+            .ToArray()
+            ?? Array.Empty<string>();
+        _syncInterval = _options.SyncIntervalSeconds > 0
+            ? TimeSpan.FromSeconds(_options.SyncIntervalSeconds)
+            : null;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
-
         var comparer = new SnapshotEqualityComparer(GetTargetInput);
 
-        _subscription = _snapshotProvider.Notifications
+        var snapshotStream = _snapshotProvider.Notifications
             .Select(n => n.Snapshot)
+            .Publish()
+            .RefCount();
+
+        var displayChanges = snapshotStream
             .Buffer(DebounceInterval)
             .Where(buffer => buffer.Count > 0)
             .Select(buffer => buffer[^1])
-            .Where(snapshot =>
-                !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
-                (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.Connection != MonitorConnectionKind.Unknown))
-            .DistinctUntilChanged(comparer)
+            .Where(IsEligibleSnapshot)
+            .DistinctUntilChanged(comparer);
+
+        var periodicSnapshots = CreatePeriodicSnapshots(snapshotStream);
+
+        _subscription = displayChanges
+            .Merge(periodicSnapshots)
             .SelectMany(snapshot =>
                 Observable.FromAsync(ct => SyncLgTvAsync(snapshot, ct))
                     .Select(_ => Unit.Default)
@@ -69,6 +85,8 @@ public sealed class DisplaySyncWorker : BackgroundService
                 ex => _logger.LogError(ex, "Display sync pipeline error."));
 
         stoppingToken.Register(() => _subscription?.Dispose());
+
+        await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
 
         try
         {
@@ -117,7 +135,21 @@ public sealed class DisplaySyncWorker : BackgroundService
         }
         catch (Exception ex) when (ex is not WebSocketException && !cancellationToken.IsCancellationRequested)
         {
+            if (_allowedCurrentInputIds.Length > 0)
+            {
+                _logger.LogWarning(ex, "Failed to query current LG TV input; allowed list is configured so skipping switch.");
+                return;
+            }
+
             _logger.LogWarning(ex, "Failed to query current LG TV input; proceeding with switch.");
+        }
+
+        if (!IsCurrentInputAllowed(currentInput))
+        {
+            _logger.LogDebug(
+                "LG TV current input {Input} is not in allowed list; skipping switch.",
+                string.IsNullOrWhiteSpace(currentInput) ? "(unknown)" : currentInput);
+            return;
         }
 
         if (!string.IsNullOrWhiteSpace(currentInput) &&
@@ -141,4 +173,52 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private string? GetTargetInput(DisplaySnapshot snapshot)
         => snapshot.PreferredMonitorOnline ? _options.TargetInputId : _options.FallbackInputId;
+
+    private bool IsCurrentInputAllowed(string? currentInput)
+    {
+        if (_allowedCurrentInputIds.Length == 0)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(currentInput))
+        {
+            return false;
+        }
+
+        foreach (var allowed in _allowedCurrentInputIds)
+        {
+            if (string.Equals(allowed, currentInput, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private IObservable<DisplaySnapshot> CreatePeriodicSnapshots(IObservable<DisplaySnapshot> snapshotStream)
+    {
+        if (_syncInterval is null)
+        {
+            return Observable.Empty<DisplaySnapshot>();
+        }
+
+        return Observable.Interval(_syncInterval.Value)
+            .WithLatestFrom(snapshotStream, (_, snapshot) => snapshot)
+            .Select(RefreshSnapshotTimestamp)
+            .Where(IsEligibleSnapshot);
+    }
+
+    private static DisplaySnapshot RefreshSnapshotTimestamp(DisplaySnapshot snapshot)
+        => new(
+            DateTimeOffset.UtcNow,
+            snapshot.Monitors,
+            snapshot.PreferredMonitor,
+            snapshot.PreferredMonitorOnline,
+            snapshot.PreferredMonitorEdidKey);
+
+    private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
+        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
+           (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.Connection != MonitorConnectionKind.Unknown);
 }

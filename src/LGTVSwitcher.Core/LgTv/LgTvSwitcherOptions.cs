@@ -33,6 +33,16 @@ public sealed class LgTvSwitcherOptions
     public string? FallbackInputId { get; set; }
 
     /// <summary>
+    /// 現在の入力がこの一覧に含まれる場合のみ切り替える（未指定または空なら常に切り替え対象）。
+    /// </summary>
+    public string[]? AllowedCurrentInputIds { get; set; }
+
+    /// <summary>
+    /// ディスプレイ変化がなくても再同期する間隔（秒）。0 以下は無効。
+    /// </summary>
+    public int SyncIntervalSeconds { get; set; }
+
+    /// <summary>
     /// LG TV の切り替えをトリガーするモニタのフレンドリ名（またはデバイス名）。
     /// </summary>
     public string PreferredMonitorName { get; set; } = string.Empty;
