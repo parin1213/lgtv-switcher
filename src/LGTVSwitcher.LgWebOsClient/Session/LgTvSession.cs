@@ -216,7 +216,8 @@ public sealed class LgTvSession : ILgTvSession
                 return new[] { ToEndpoint(match) };
             }
 
-            _logger.LogWarning("PreferredTvUsn {Usn} was not found via SSDP discovery. Falling back to discovered candidates.", _options.PreferredTvUsn);
+            _logger.LogWarning("PreferredTvUsn {Usn} was not found via SSDP discovery. Skipping fallback to other TVs.", _options.PreferredTvUsn);
+            return Array.Empty<LgTvEndpoint>();
         }
 
         if (discovered.Count > 0)
@@ -248,7 +249,11 @@ public sealed class LgTvSession : ILgTvSession
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(endpoint.Usn))
+        // PreferredTvUsn が未設定または同一 USN の場合のみ保存し、別 TV への上書きを防ぐ。
+        var shouldPersistPreferredUsn = !string.IsNullOrWhiteSpace(endpoint.Usn) &&
+            (string.IsNullOrWhiteSpace(_options.PreferredTvUsn) ||
+             string.Equals(_options.PreferredTvUsn, endpoint.Usn, StringComparison.OrdinalIgnoreCase));
+        if (shouldPersistPreferredUsn)
         {
             _options.PreferredTvUsn = endpoint.Usn;
             if (_clientKeyStore is not null)
