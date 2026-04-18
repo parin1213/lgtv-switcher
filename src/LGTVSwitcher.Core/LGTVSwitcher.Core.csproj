@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -12,5 +12,6 @@
     <PackageReference Include="System.Reactive.Core" />
     <PackageReference Include="System.Reactive.Linq" />
   </ItemGroup>
+
 
 </Project>

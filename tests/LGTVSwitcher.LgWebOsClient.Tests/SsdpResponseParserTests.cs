@@ -1,9 +1,11 @@
 using System;
 using System.Net;
 
+using LGTVSwitcher.Core.LgWebOs;
+
 using Xunit;
 
-namespace LGTVSwitcher.LgWebOsClient.Tests;
+namespace LGTVSwitcher.Core.Tests;
 
 public sealed class SsdpResponseParserTests
 {

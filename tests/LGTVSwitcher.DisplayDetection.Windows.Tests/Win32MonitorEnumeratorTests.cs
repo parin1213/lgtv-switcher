@@ -1,9 +1,9 @@
 using System.Reflection;
 using LGTVSwitcher.Core.Display;
-using LGTVSwitcher.DisplayDetection.Windows;
+using LGTVSwitcher.Daemon.Windows.DisplayDetection;
 using Xunit;
 
-namespace LGTVSwitcher.DisplayDetection.Windows.Tests;
+namespace LGTVSwitcher.Daemon.Windows.Tests;
 
 public class Win32MonitorEnumeratorTests
 {

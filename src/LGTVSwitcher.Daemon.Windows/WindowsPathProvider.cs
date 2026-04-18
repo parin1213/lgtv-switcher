@@ -1,8 +1,6 @@
-using LGTVSwitcher.Core;
-
 namespace LGTVSwitcher.Daemon.Windows;
 
-public sealed class WindowsPathProvider : IAppPathProvider
+public sealed class WindowsPathProvider
 {
     private const string RootFolderName = "LGTVSwitcher";
     private const string StateFileName = "device-state.json";
