@@ -1,8 +1,8 @@
+using System.IO;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Net.WebSockets;
-using System.Reactive;
-using System.Reactive.Linq;
+using System.Threading.Channels;
 
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
@@ -23,7 +23,7 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly LgTvSwitcherOptions _options;
     private readonly string[] _allowedCurrentInputIds;
     private readonly TimeSpan? _syncInterval;
-    private IDisposable? _subscription;
+    private volatile DisplaySnapshot? _latestSnapshot;
 
     public DisplaySyncWorker(
         IDisplaySnapshotProvider snapshotProvider,
@@ -48,60 +48,91 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var comparer = new SnapshotEqualityComparer(GetTargetInput);
+        var channel = Channel.CreateUnbounded<DisplaySnapshot>(new UnboundedChannelOptions { SingleReader = true });
 
-        var snapshotStream = _snapshotProvider.Notifications
-            .Select(n => n.Snapshot)
-            .Publish()
-            .RefCount();
-
-        var displayChanges = snapshotStream
-            .Buffer(DebounceInterval)
-            .Where(buffer => buffer.Count > 0)
-            .Select(buffer => buffer[^1])
-            .Where(IsEligibleSnapshot)
-            .DistinctUntilChanged(comparer);
-
-        var periodicSnapshots = CreatePeriodicSnapshots(snapshotStream);
-
-        _subscription = displayChanges
-            .Merge(periodicSnapshots)
-            .SelectMany(snapshot =>
-                Observable.FromAsync(ct => SyncLgTvAsync(snapshot, ct))
-                    .Select(_ => Unit.Default)
-                    .Catch<Unit, WebSocketException>(ex =>
-                    {
-                        _logger.LogWarning("LG TV transport failed; reconnecting: {Message}", ex.Message);
-                        _logger.LogDebug(ex, "WebSocket exception details.");
-                        return Observable.Empty<Unit>();
-                    })
-                    .Catch<Unit, Exception>(ex =>
-                    {
-                        _logger.LogWarning(ex, "LG TV sync failed: {Message}", ex.Message);
-                        return Observable.Empty<Unit>();
-                    }))
-            .Subscribe(
-                _ => { },
-                ex => _logger.LogError(ex, "Display sync pipeline error."));
-
-        stoppingToken.Register(() => _subscription?.Dispose());
+        using var sub = _snapshotProvider.Notifications.Subscribe(snapshot =>
+        {
+            _latestSnapshot = snapshot;
+            channel.Writer.TryWrite(snapshot);
+        });
 
         await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
 
-        try
+        var periodicTask = _syncInterval.HasValue
+            ? RunPeriodicSyncAsync(stoppingToken)
+            : Task.CompletedTask;
+
+        await RunDebounceLoopAsync(channel.Reader, stoppingToken).ConfigureAwait(false);
+        channel.Writer.TryComplete();
+
+        await periodicTask.ConfigureAwait(false);
+    }
+
+    private async Task RunDebounceLoopAsync(ChannelReader<DisplaySnapshot> reader, CancellationToken ct)
+    {
+        var comparer = new SnapshotEqualityComparer(GetTargetInput);
+        DisplaySnapshot? lastProcessed = null;
+
+        while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
         {
-            await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // expected on shutdown
+            DisplaySnapshot? latest = null;
+            using var windowCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            windowCts.CancelAfter(DebounceInterval);
+
+            try
+            {
+                await foreach (var s in reader.ReadAllAsync(windowCts.Token).ConfigureAwait(false))
+                    latest = s;
+            }
+            catch (OperationCanceledException) when (windowCts.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                // 800ms window elapsed — process latest
+            }
+
+            if (latest is null || ct.IsCancellationRequested) continue;
+            if (!IsEligibleSnapshot(latest)) continue;
+            if (comparer.Equals(latest, lastProcessed)) continue;
+
+            lastProcessed = latest;
+            await TrySyncAsync(latest, ct).ConfigureAwait(false);
         }
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    private async Task RunPeriodicSyncAsync(CancellationToken ct)
     {
-        _subscription?.Dispose();
-        return base.StopAsync(cancellationToken);
+        using var timer = new PeriodicTimer(_syncInterval!.Value);
+        while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+        {
+            var snapshot = _latestSnapshot;
+            if (snapshot is null || !IsEligibleSnapshot(snapshot)) continue;
+
+            var refreshed = new DisplaySnapshot(
+                DateTimeOffset.UtcNow,
+                snapshot.Monitors,
+                snapshot.PreferredMonitor,
+                snapshot.PreferredMonitorOnline,
+                snapshot.PreferredMonitorEdidKey);
+
+            await TrySyncAsync(refreshed, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task TrySyncAsync(DisplaySnapshot snapshot, CancellationToken ct)
+    {
+        try
+        {
+            await SyncLgTvAsync(snapshot, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex) when (IsNetworkException(ex))
+        {
+            _logger.LogWarning("LG TV transport error; skipping snapshot: {Message}", ex.Message);
+            _logger.LogDebug(ex, "LG TV transport exception details.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "LG TV sync failed.");
+        }
     }
 
     private async Task SyncLgTvAsync(DisplaySnapshot snapshot, CancellationToken cancellationToken)
@@ -127,21 +158,21 @@ public sealed class DisplaySyncWorker : BackgroundService
         {
             currentInput = await _lgTvController.GetCurrentInputAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is WebSocketException || ex is HttpRequestException || ex is SocketException)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && IsNetworkException(ex))
         {
-            _logger.LogWarning("LG TV query skipped due to transport error: {Message}", ex.Message);
-            _logger.LogDebug(ex, "Transport exception while querying current input.");
+            _logger.LogWarning("Failed to query LG TV input; skipping snapshot: {Message}", ex.Message);
+            _logger.LogDebug(ex, "LG TV input query exception details.");
             return;
         }
-        catch (Exception ex) when (ex is not WebSocketException && !cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             if (_allowedCurrentInputIds.Length > 0)
             {
-                _logger.LogWarning(ex, "Failed to query current LG TV input; allowed list is configured so skipping switch.");
+                _logger.LogWarning("Failed to query LG TV input; skipping switch (allowed list configured): {Message}", ex.Message);
                 return;
             }
 
-            _logger.LogWarning(ex, "Failed to query current LG TV input; proceeding with switch.");
+            _logger.LogWarning("Failed to query LG TV input; proceeding with switch: {Message}", ex.Message);
         }
 
         if (!IsCurrentInputAllowed(currentInput))
@@ -160,15 +191,7 @@ public sealed class DisplaySyncWorker : BackgroundService
         }
 
         _logger.LogInformation("Switching LG TV input to {Input} (preferred monitor online = {State})", targetInput, snapshot.PreferredMonitorOnline);
-        try
-        {
-            await _lgTvController.SwitchInputAsync(targetInput, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is WebSocketException || ex is HttpRequestException || ex is SocketException)
-        {
-            _logger.LogWarning("LG TV switch skipped due to transport error: {Message}", ex.Message);
-            _logger.LogDebug(ex, "Transport exception while switching input.");
-        }
+        await _lgTvController.SwitchInputAsync(targetInput, cancellationToken).ConfigureAwait(false);
     }
 
     private string? GetTargetInput(DisplaySnapshot snapshot)
@@ -176,19 +199,32 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private bool IsCurrentInputAllowed(string? currentInput)
     {
-        if (_allowedCurrentInputIds.Length == 0)
-        {
-            return true;
-        }
-
-        if (string.IsNullOrWhiteSpace(currentInput))
-        {
-            return false;
-        }
+        if (_allowedCurrentInputIds.Length == 0) return true;
+        if (string.IsNullOrWhiteSpace(currentInput)) return false;
 
         foreach (var allowed in _allowedCurrentInputIds)
         {
             if (string.Equals(allowed, currentInput, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
+        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
+           (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown);
+
+    private static bool IsNetworkException(Exception ex)
+    {
+        if (ex is AggregateException aggregateException)
+        {
+            return aggregateException.InnerExceptions.Any(IsNetworkException);
+        }
+
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is WebSocketException or HttpRequestException or SocketException or IOException)
             {
                 return true;
             }
@@ -196,29 +232,4 @@ public sealed class DisplaySyncWorker : BackgroundService
 
         return false;
     }
-
-    private IObservable<DisplaySnapshot> CreatePeriodicSnapshots(IObservable<DisplaySnapshot> snapshotStream)
-    {
-        if (_syncInterval is null)
-        {
-            return Observable.Empty<DisplaySnapshot>();
-        }
-
-        return Observable.Interval(_syncInterval.Value)
-            .WithLatestFrom(snapshotStream, (_, snapshot) => snapshot)
-            .Select(RefreshSnapshotTimestamp)
-            .Where(IsEligibleSnapshot);
-    }
-
-    private static DisplaySnapshot RefreshSnapshotTimestamp(DisplaySnapshot snapshot)
-        => new(
-            DateTimeOffset.UtcNow,
-            snapshot.Monitors,
-            snapshot.PreferredMonitor,
-            snapshot.PreferredMonitorOnline,
-            snapshot.PreferredMonitorEdidKey);
-
-    private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
-        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
-           (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.Connection != MonitorConnectionKind.Unknown);
 }

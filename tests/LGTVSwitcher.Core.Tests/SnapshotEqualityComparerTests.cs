@@ -8,8 +8,8 @@ namespace LGTVSwitcher.Core.Tests;
 
 public sealed class SnapshotEqualityComparerTests
 {
-    private static readonly MonitorInfo HdmiMonitor = new("dev1", "Primary", true, MonitorConnectionKind.Hdmi);
-    private static readonly MonitorInfo DisplayPortMonitor = new("dev2", "Secondary", false, MonitorConnectionKind.DisplayPort);
+    private static readonly MonitorSnapshot HdmiMonitor = new("dev1", "Primary", default, true, MonitorConnectionKind.Hdmi, null);
+    private static readonly MonitorSnapshot DisplayPortMonitor = new("dev2", "Secondary", default, false, MonitorConnectionKind.DisplayPort, null);
 
     [Fact]
     public void Equals_SameInstance_ReturnsTrue()
@@ -82,10 +82,31 @@ public sealed class SnapshotEqualityComparerTests
         Assert.Equal(comparer.GetHashCode(first), comparer.GetHashCode(second));
     }
 
-    private static DisplaySnapshot CreateSnapshot(bool preferredOnline, string? edid, MonitorInfo? monitor, DateTimeOffset? timestamp = null)
+    [Fact]
+    public void MonitorBounds_ToString_ReturnsReadableBounds()
+    {
+        var bounds = new MonitorBounds(1, 2, 3840, 2160);
+
+        Assert.Equal("(1,2) 3840x2160", bounds.ToString());
+    }
+
+    [Fact]
+    public void DisplaySnapshotChangedEventArgs_CopiesSnapshotsAndSetsReason()
+    {
+        var monitors = new List<MonitorSnapshot> { HdmiMonitor };
+        var args = new DisplaySnapshotChangedEventArgs(monitors, "initial");
+
+        monitors.Clear();
+
+        Assert.Single(args.Snapshots);
+        Assert.Equal("initial", args.Reason);
+        Assert.True(args.Timestamp <= DateTimeOffset.UtcNow);
+    }
+
+    private static DisplaySnapshot CreateSnapshot(bool preferredOnline, string? edid, MonitorSnapshot? monitor, DateTimeOffset? timestamp = null)
     {
         var monitors = monitor is null
-            ? Array.Empty<MonitorInfo>()
+            ? Array.Empty<MonitorSnapshot>()
             : new[] { monitor };
 
         return new DisplaySnapshot(

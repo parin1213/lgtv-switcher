@@ -1,5 +1,6 @@
 namespace LGTVSwitcher.Daemon.Windows;
 
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal static class CliArgs
 {
     public static string[] Normalize(string[]? args)

@@ -20,12 +20,11 @@
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="System.Management" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\\LGTVSwitcher.Core\\LGTVSwitcher.Core.csproj" />
-    <ProjectReference Include="..\\LGTVSwitcher.DisplayDetection.Windows\\LGTVSwitcher.DisplayDetection.Windows.csproj" />
-    <ProjectReference Include="..\\LGTVSwitcher.LgWebOsClient\\LGTVSwitcher.LgWebOsClient.csproj" />
+    <ProjectReference Include="..\LGTVSwitcher.Core\LGTVSwitcher.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -6,6 +6,7 @@ using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using LGTVSwitcher.Core.Display;
+using LGTVSwitcher.Core.LgWebOs;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,7 +34,7 @@ public class DisplaySyncWorkerTests
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
         await Task.Delay(100);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "test-online"));
+        provider.Publish(CreateSnapshot(online: true));
 
         var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
         Assert.True(switched, "Expected a switch to HDMI_4.");
@@ -46,7 +47,7 @@ public class DisplaySyncWorkerTests
     {
         var provider = new FakeSnapshotProvider
         {
-            InitialNotification = new DisplaySnapshotNotification(CreateSnapshot(online: true), "initial")
+            InitialNotification = CreateSnapshot(online: true)
         };
         var controller = new FakeLgTvController();
         var options = Options.Create(new LgTvSwitcherOptions
@@ -83,7 +84,7 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true, ageSeconds: 6), "stale"));
+        provider.Publish(CreateSnapshot(online: true, ageSeconds: 6));
 
         await Task.Delay(1200);
 
@@ -109,7 +110,7 @@ public class DisplaySyncWorkerTests
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
         await Task.Delay(100);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: false), "test-offline"));
+        provider.Publish(CreateSnapshot(online: false));
 
         var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_2");
         Assert.True(switched, "Expected a switch to HDMI_2.");
@@ -133,7 +134,7 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "test-redundant"));
+        provider.Publish(CreateSnapshot(online: true));
 
         await Task.Delay(1200);
 
@@ -159,7 +160,7 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "not-allowed"));
+        provider.Publish(CreateSnapshot(online: true));
 
         await Task.Delay(1200);
 
@@ -185,7 +186,7 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "allowed"));
+        provider.Publish(CreateSnapshot(online: true));
 
         var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
         Assert.True(switched, "Expected a switch to HDMI_4.");
@@ -209,7 +210,7 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true, edidKey: null), "missing-edid"));
+        provider.Publish(CreateSnapshot(online: true, edidKey: null));
 
         await Task.Delay(1200);
 
@@ -223,7 +224,7 @@ public class DisplaySyncWorkerTests
     {
         var provider = new FakeSnapshotProvider
         {
-            InitialNotification = new DisplaySnapshotNotification(CreateSnapshot(online: true), "initial")
+            InitialNotification = CreateSnapshot(online: true)
         };
         var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
         var options = Options.Create(new LgTvSwitcherOptions
@@ -261,8 +262,7 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(
-            CreateSnapshot(online: true, connection: MonitorConnectionKind.Unknown), "unknown-connection"));
+        provider.Publish(CreateSnapshot(online: true, connection: MonitorConnectionKind.Unknown));
 
         await Task.Delay(1200);
 
@@ -289,8 +289,8 @@ public class DisplaySyncWorkerTests
         await WaitForStart(provider);
         await Task.Delay(100);
         var snapshot = CreateSnapshot(online: true);
-        provider.Publish(new DisplaySnapshotNotification(snapshot, "dup-1"));
-        provider.Publish(new DisplaySnapshotNotification(snapshot, "dup-2"));
+        provider.Publish(snapshot);
+        provider.Publish(snapshot);
 
         await Task.Delay(1200);
 
@@ -300,7 +300,7 @@ public class DisplaySyncWorkerTests
     }
 
     [Fact]
-    public async Task QueryTransportError_ShouldSkipSwitch()
+    public async Task QueryTransportError_NoAllowedList_ShouldSkipSwitch()
     {
         var provider = new FakeSnapshotProvider();
         var controller = new FakeLgTvController
@@ -318,7 +318,92 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "query-ex"));
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task QueryWrappedTransportError_NoAllowedList_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new LgTvRegistrationException("registration failed", new WebSocketException())
+        };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task QueryAggregateTransportError_NoAllowedList_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new AggregateException(new WebSocketException())
+        };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task QueryError_WithAllowedList_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new WebSocketException()
+        };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            AllowedCurrentInputIds = new[] { "HDMI_2" },
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: true));
 
         await Task.Delay(1200);
 
@@ -346,10 +431,10 @@ public class DisplaySyncWorkerTests
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: true), "switch-ex"));
+        provider.Publish(CreateSnapshot(online: true));
         await Task.Delay(900);
         controller.SwitchException = null;
-        provider.Publish(new DisplaySnapshotNotification(CreateSnapshot(online: false, ageSeconds: 0), "switch-ok"));
+        provider.Publish(CreateSnapshot(online: false, ageSeconds: 0));
 
         await Task.Delay(1500);
 
@@ -381,10 +466,167 @@ public class DisplaySyncWorkerTests
         await worker.StopAsync(CancellationToken.None);
     }
 
+    // 実機テスト Phase R1 の知見: 800ms debounce ウィンドウ内の連続イベントは最後の1件だけ処理され、スイッチは1回に集約される
+    [Fact]
+    public async Task RapidFireSnapshots_ShouldDebounceToSingleSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController();
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+
+        provider.Publish(CreateSnapshot(online: true));
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "Expected a switch to HDMI_4.");
+
+        await Task.Delay(1500);
+        Assert.Single(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    // 実機テスト Phase S2 の知見: フラッピング中に online→offline→online が短時間で起きると、最終状態 (online) のみが処理される
+    [Fact]
+    public async Task Flapping_OnlineOfflineOnline_ShouldSwitchOnlyToFinalState()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController();
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+
+        // 100ms 間隔で online→offline→online を送信 (全て 800ms ウィンドウ内)
+        provider.Publish(CreateSnapshot(online: true));
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: false));
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "Expected a switch to HDMI_4 (final online state).");
+
+        await Task.Delay(1500);
+        Assert.Single(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    // 実機テスト Phase 0 の知見: FallbackInputId が空の場合、オフライン時はスイッチをスキップする (最初の実行で何も起きなかった原因)
+    [Fact]
+    public async Task OfflineSnapshot_EmptyFallback_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController();
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = string.Empty,
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: false));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+        Assert.Equal(0, controller.QueryCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    // 実機テスト Phase E3 の知見: ディスプレイ変化なしでも SyncIntervalSeconds の定期同期が TV 入力の外部変更を検知してスイッチを発火する
+    [Fact]
+    public async Task PeriodicSync_ShouldRepairExternallyChangedTvInput()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            SyncIntervalSeconds = 1,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+
+        provider.Publish(CreateSnapshot(online: true));
+        await Task.Delay(1200);
+        Assert.Empty(controller.SwitchCalls);
+
+        // TV 入力が外部から変更される
+        controller.CurrentInput = "HDMI_2";
+
+        // 定期同期 (1秒) が検知してスイッチ
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4", timeoutMs: 3000);
+        Assert.True(switched, "Expected periodic sync to switch back to HDMI_4.");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    // 非ネットワーク系のクエリ例外かつ AllowedCurrentInputIds が空の場合、スイッチを続行する
+    [Fact]
+    public async Task QueryNonNetworkError_NoAllowedList_ShouldProceedWithSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new InvalidOperationException("unexpected error")
+        };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "Expected switch to proceed despite non-network query error with empty allowed list.");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
     private static DisplaySnapshot CreateSnapshot(bool online, int ageSeconds = 0, string? edidKey = "EDID-TEST", MonitorConnectionKind connection = MonitorConnectionKind.Hdmi)
     {
         var now = DateTimeOffset.UtcNow.AddSeconds(-ageSeconds);
-        var monitor = new MonitorInfo("DEV1", "TEST", true, connection);
+        var monitor = new MonitorSnapshot("DEV1", "TEST", default, true, connection, edidKey);
         return new DisplaySnapshot(
             timestamp: now,
             monitors: new[] { monitor },
@@ -395,24 +637,21 @@ public class DisplaySyncWorkerTests
 
     private sealed class FakeSnapshotProvider : IDisplaySnapshotProvider
     {
-        private readonly Subject<DisplaySnapshotNotification> _subject = new();
+        private readonly Subject<DisplaySnapshot> _subject = new();
         public bool Started { get; private set; }
-        public DisplaySnapshotNotification? InitialNotification { get; set; }
+        public DisplaySnapshot? InitialNotification { get; set; }
 
-        public IObservable<DisplaySnapshotNotification> Notifications => _subject;
+        public IObservable<DisplaySnapshot> Notifications => _subject;
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
             Started = true;
             if (InitialNotification is not null)
-            {
                 _subject.OnNext(InitialNotification);
-            }
             return Task.CompletedTask;
         }
 
-        public void Publish(DisplaySnapshotNotification notification)
-            => _subject.OnNext(notification);
+        public void Publish(DisplaySnapshot snapshot) => _subject.OnNext(snapshot);
     }
 
     private static async Task WaitForStart(FakeSnapshotProvider provider)

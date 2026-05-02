@@ -1,27 +1,21 @@
 using ConsoleAppFramework;
 
 using LGTVSwitcher.Core.LgTv;
-using LGTVSwitcher.LgWebOsClient;
+using LGTVSwitcher.Core.LgWebOs;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace LGTVSwitcher.Daemon.Windows;
 
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class DaemonCommands
 {
-    private readonly IDaemonHostFactory _hostFactory;
-
-    public DaemonCommands(IDaemonHostFactory hostFactory)
-    {
-        _hostFactory = hostFactory;
-    }
-
     /// <summary>デーモン起動（DisplaySyncWorker 実行）</summary>
     [Command("run")]
     public async Task Run(CancellationToken ct = default)
     {
-        using var host = _hostFactory.BuildHost(Array.Empty<string>());
+        using var host = DaemonHost.Build(Array.Empty<string>());
         await host.RunAsync(ct).ConfigureAwait(false);
     }
 
@@ -33,10 +27,10 @@ public sealed class DaemonCommands
         string? pairIp = null,
         CancellationToken ct = default)
     {
-        using var host = _hostFactory.BuildHost(Array.Empty<string>());
+        using var host = DaemonHost.Build(Array.Empty<string>());
         using var scope = host.Services.CreateScope();
 
-        var discovery = scope.ServiceProvider.GetRequiredService<ILgTvDiscoveryService>();
+        var discovery = scope.ServiceProvider.GetRequiredService<SsdpLgTvDiscoveryService>();
         var store = scope.ServiceProvider.GetRequiredService<ILgTvClientKeyStore>();
 
         var results = await discovery.DiscoverAsync(ct).ConfigureAwait(false);

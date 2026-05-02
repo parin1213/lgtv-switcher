@@ -1,7 +1,6 @@
 using ConsoleAppFramework;
 
 using LGTVSwitcher.Daemon.Windows;
-using Microsoft.Extensions.DependencyInjection;
 
 if (!OperatingSystem.IsWindows())
 {
@@ -12,10 +11,6 @@ if (!OperatingSystem.IsWindows())
 var normalizedArgs = CliArgs.Normalize(args);
 
 var app = ConsoleApp.Create();
-app.ConfigureServices((context, services) =>
-{
-    services.AddSingleton<IDaemonHostFactory, DefaultDaemonHostFactory>();
-});
 app.Add<DaemonCommands>();
 
 await app.RunAsync(normalizedArgs);

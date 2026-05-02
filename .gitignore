@@ -3,6 +3,9 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# CLAUDE.md is a local symlink to AGENTS.md — not tracked by git
+CLAUDE.md
+
 # dotenv files
 .env
 

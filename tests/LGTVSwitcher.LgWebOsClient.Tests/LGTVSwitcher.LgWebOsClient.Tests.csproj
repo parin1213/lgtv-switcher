@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\\..\\src\\LGTVSwitcher.LgWebOsClient\\LGTVSwitcher.LgWebOsClient.csproj" />
+    <ProjectReference Include="..\\..\\src\\LGTVSwitcher.Core\\LGTVSwitcher.Core.csproj" />
   </ItemGroup>
 
 </Project>

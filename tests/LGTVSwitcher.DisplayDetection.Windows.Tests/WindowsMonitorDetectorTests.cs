@@ -4,12 +4,13 @@ using System.Collections.Generic;
 using System.Reflection;
 
 using LGTVSwitcher.Core.Display;
+using LGTVSwitcher.Daemon.Windows.DisplayDetection;
 
 using Microsoft.Extensions.Logging;
 
 using Xunit;
 
-namespace LGTVSwitcher.DisplayDetection.Windows.Tests;
+namespace LGTVSwitcher.Daemon.Windows.Tests;
 
 public sealed class WindowsMonitorDetectorTests
 {
