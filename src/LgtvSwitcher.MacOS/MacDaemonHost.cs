@@ -44,11 +44,13 @@ internal static class MacDaemonHost
             return new JsonFileClientKeyStore(storagePath, logger);
         });
 
-        services.AddSingleton<DefaultWebSocketTransport>();
+        services.AddSingleton<ILgTvWebSocketTransport, DefaultWebSocketTransport>();
         services.AddSingleton<LgTvResponseParser>();
         services.AddSingleton<SsdpResponseParser>();
         services.AddSingleton<SsdpLgTvDiscoveryService>();
+        services.AddSingleton<ILgTvDiscoveryService>(sp => sp.GetRequiredService<SsdpLgTvDiscoveryService>());
         services.AddSingleton<LgTvSession>();
+        services.AddSingleton<ILgTvSession>(sp => sp.GetRequiredService<LgTvSession>());
         services.AddSingleton<ILgTvController, LgTvController>();
 
         services.AddSingleton<IDisplaySnapshotProvider, MacDisplayWatcher>();

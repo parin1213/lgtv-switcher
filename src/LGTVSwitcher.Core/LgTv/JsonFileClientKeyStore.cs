@@ -6,6 +6,8 @@ namespace LGTVSwitcher.Core.LgTv;
 
 public sealed class JsonFileClientKeyStore : ILgTvClientKeyStore
 {
+    private const string LegacyStateFileName = "device-state.json";
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
@@ -14,6 +16,7 @@ public sealed class JsonFileClientKeyStore : ILgTvClientKeyStore
 
     private readonly string _filePath;
     private readonly ILogger<JsonFileClientKeyStore> _logger;
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     public JsonFileClientKeyStore(string filePath, ILogger<JsonFileClientKeyStore> logger)
     {
@@ -23,17 +26,20 @@ public sealed class JsonFileClientKeyStore : ILgTvClientKeyStore
 
     public async Task<LgTvPersistedState> GetStateAsync(CancellationToken cancellationToken)
     {
-        if (!File.Exists(_filePath))
+        var path = ResolveReadableStatePath();
+        if (path is null)
+        {
             return new LgTvPersistedState();
+        }
 
         try
         {
-            var json = await File.ReadAllTextAsync(_filePath, cancellationToken).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<LgTvPersistedState>(json, SerializerOptions) ?? new LgTvPersistedState();
+            var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+            return ParseState(json);
         }
         catch (Exception ex) when (ex is JsonException || ex is IOException)
         {
-            _logger.LogWarning(ex, "Failed to read state file {Path}; starting with empty state.", _filePath);
+            _logger.LogWarning(ex, "Failed to read state file {Path}; starting with empty state.", path);
             return new LgTvPersistedState();
         }
     }
@@ -46,22 +52,86 @@ public sealed class JsonFileClientKeyStore : ILgTvClientKeyStore
 
     private async Task PersistStateAsync(string? clientKey, string? preferredTvUsn, CancellationToken cancellationToken)
     {
-        var current = await GetStateAsync(cancellationToken).ConfigureAwait(false);
-        var updated = current with
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            ClientKey = clientKey ?? current.ClientKey,
-            PreferredTvUsn = preferredTvUsn ?? current.PreferredTvUsn,
-        };
+            var current = await GetStateAsync(cancellationToken).ConfigureAwait(false);
+            var updated = current with
+            {
+                ClientKey = clientKey ?? current.ClientKey,
+                PreferredTvUsn = preferredTvUsn ?? current.PreferredTvUsn,
+            };
 
-        var dir = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(dir))
-            Directory.CreateDirectory(dir);
+            var dir = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
 
-        await File.WriteAllTextAsync(
-            _filePath,
-            JsonSerializer.Serialize(updated, SerializerOptions),
-            cancellationToken).ConfigureAwait(false);
+            var tempPath = $"{_filePath}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                await File.WriteAllTextAsync(
+                    tempPath,
+                    JsonSerializer.Serialize(updated, SerializerOptions),
+                    cancellationToken).ConfigureAwait(false);
 
-        _logger.LogInformation("Persisted client state to {Path}", _filePath);
+                File.Move(tempPath, _filePath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+
+            _logger.LogInformation("Persisted client state to {Path}", _filePath);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private string? ResolveReadableStatePath()
+    {
+        if (File.Exists(_filePath))
+        {
+            return _filePath;
+        }
+
+        var directory = Path.GetDirectoryName(_filePath);
+        if (string.IsNullOrEmpty(directory))
+        {
+            return null;
+        }
+
+        var legacyPath = Path.Combine(directory, LegacyStateFileName);
+        return File.Exists(legacyPath) ? legacyPath : null;
+    }
+
+    private static LgTvPersistedState ParseState(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("LgTvSwitcher", out var legacySection) &&
+            legacySection.ValueKind == JsonValueKind.Object)
+        {
+            return new LgTvPersistedState(
+                ReadString(legacySection, "ClientKey"),
+                ReadString(legacySection, "PreferredTvUsn"));
+        }
+
+        return JsonSerializer.Deserialize<LgTvPersistedState>(json, SerializerOptions) ?? new LgTvPersistedState();
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
     }
 }

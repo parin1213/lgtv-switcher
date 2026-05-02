@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace LGTVSwitcher.Daemon.Windows.DisplayDetection;
 
 [SupportedOSPlatform("windows")]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class WindowsMonitorDetector
 {
     private readonly WindowsMessagePump _messagePump;

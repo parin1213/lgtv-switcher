@@ -6,6 +6,7 @@ using System.Reactive.Subjects;
 using System.Threading;
 using System.Threading.Tasks;
 using LGTVSwitcher.Core.Display;
+using LGTVSwitcher.Core.LgWebOs;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -299,7 +300,7 @@ public class DisplaySyncWorkerTests
     }
 
     [Fact]
-    public async Task QueryError_NoAllowedList_ShouldProceedWithSwitch()
+    public async Task QueryTransportError_NoAllowedList_ShouldSkipSwitch()
     {
         var provider = new FakeSnapshotProvider();
         var controller = new FakeLgTvController
@@ -319,8 +320,65 @@ public class DisplaySyncWorkerTests
         await WaitForStart(provider);
         provider.Publish(CreateSnapshot(online: true));
 
-        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
-        Assert.True(switched, "Expected switch to proceed when GetCurrentInput fails with no allowed list.");
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task QueryWrappedTransportError_NoAllowedList_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new LgTvRegistrationException("registration failed", new WebSocketException())
+        };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task QueryAggregateTransportError_NoAllowedList_ShouldSkipSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new AggregateException(new WebSocketException())
+        };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
 
         await worker.StopAsync(CancellationToken.None);
     }

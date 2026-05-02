@@ -14,17 +14,25 @@ using Microsoft.Extensions.Options;
 
 namespace LGTVSwitcher.Core.LgWebOs;
 
-public sealed class LgTvSession
+public interface ILgTvSession : IAsyncDisposable
+{
+    Task EnsureConnectedAsync(CancellationToken cancellationToken);
+
+    Task<JsonElement?> SendRequestAsync(string uri, object? payload, CancellationToken cancellationToken);
+}
+
+public sealed class LgTvSession : ILgTvSession
 {
     private static readonly TimeSpan RegistrationTimeout = TimeSpan.FromMinutes(2);
 
-    private readonly DefaultWebSocketTransport _transport;
+    private readonly ILgTvWebSocketTransport _transport;
     private readonly LgTvSwitcherOptions _options;
     private readonly ILogger<LgTvSession> _logger;
-    private readonly SsdpLgTvDiscoveryService _discoveryService;
+    private readonly ILgTvDiscoveryService _discoveryService;
     private readonly ILgTvClientKeyStore? _clientKeyStore;
     private readonly LgTvResponseParser _responseParser;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
+    private readonly SemaphoreSlim _requestLock = new(1, 1);
     private string? _activeHost;
     private string? _activeUsn;
     private bool _isRegistered;
@@ -32,11 +40,11 @@ public sealed class LgTvSession
     private bool _disposed;
 
     public LgTvSession(
-        DefaultWebSocketTransport transport,
+        ILgTvWebSocketTransport transport,
         IOptions<LgTvSwitcherOptions> options,
         ILogger<LgTvSession> logger,
         LgTvResponseParser responseParser,
-        SsdpLgTvDiscoveryService discoveryService,
+        ILgTvDiscoveryService discoveryService,
         ILgTvClientKeyStore? clientKeyStore = null)
     {
         _transport = transport;
@@ -110,7 +118,8 @@ public sealed class LgTvSession
                 catch (Exception ex) when (ex is LgTvRegistrationException || ex is WebSocketException || ex is IOException || ex is SocketException)
                 {
                     lastError = ex;
-                    _logger.LogWarning(ex, "Failed to connect/register with LG TV at {Host}. Trying next candidate.", candidate.Host);
+                    _logger.LogWarning("Failed to connect/register with LG TV at {Host}. Trying next candidate: {Message}", candidate.Host, ex.Message);
+                    _logger.LogDebug(ex, "LG TV connect/register exception details.");
                     _isRegistered = false;
                     _activeHost = null;
                     _activeUsn = null;
@@ -133,8 +142,20 @@ public sealed class LgTvSession
 
     public async Task<JsonElement?> SendRequestAsync(string uri, object? payload, CancellationToken cancellationToken)
     {
-        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
+        await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await SendRequestCoreAsync(uri, payload, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _requestLock.Release();
+        }
+    }
 
+    private async Task<JsonElement?> SendRequestCoreAsync(string uri, object? payload, CancellationToken cancellationToken)
+    {
+        await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
         var requestEnvelope = new LgTvRequestEnvelope(
             Guid.NewGuid().ToString(),
             "request",
@@ -152,7 +173,8 @@ public sealed class LgTvSession
             }
             catch (Exception ex) when (ex is WebSocketException || ex is IOException || ex is SocketException)
             {
-                _logger.LogWarning(ex, "LG TV transport failed. Re-establishing session and retrying.");
+                _logger.LogWarning("LG TV transport failed. Re-establishing session and retrying: {Message}", ex.Message);
+                _logger.LogDebug(ex, "LG TV transport exception details.");
                 _isRegistered = false;
                 await _transport.DisposeAsync().ConfigureAwait(false);
                 await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
@@ -193,6 +215,7 @@ public sealed class LgTvSession
 
         _disposed = true;
         _connectionLock.Dispose();
+        _requestLock.Dispose();
         await _transport.DisposeAsync().ConfigureAwait(false);
     }
 

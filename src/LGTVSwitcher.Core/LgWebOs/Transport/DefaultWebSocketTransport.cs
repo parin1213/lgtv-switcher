@@ -7,7 +7,19 @@ using Microsoft.Extensions.Logging;
 
 namespace LGTVSwitcher.Core.LgWebOs.Transport;
 
-public sealed class DefaultWebSocketTransport
+public interface ILgTvWebSocketTransport : IAsyncDisposable
+{
+    WebSocketState State { get; }
+
+    Task ConnectAsync(Uri uri, CancellationToken cancellationToken);
+
+    Task SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken);
+
+    Task<string?> ReceiveStringAsync(CancellationToken cancellationToken);
+}
+
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+public sealed class DefaultWebSocketTransport : ILgTvWebSocketTransport
 {
     private readonly ILogger<DefaultWebSocketTransport> _logger;
     private ClientWebSocket? _client;

@@ -71,6 +71,55 @@ LOCATION: http://127.0.0.1/desc.xml
         Assert.Null(result);
     }
 
+    [Fact]
+    public void Parse_ReturnsNull_ForEmptyResponse()
+    {
+        var parser = new SsdpResponseParser();
+        var remote = new IPEndPoint(IPAddress.Loopback, 1900);
+
+        var result = parser.Parse(" ", remote);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Parse_ReturnsNull_WhenNoIdentifyingHeadersExist()
+    {
+        var parser = new SsdpResponseParser();
+        var remote = new IPEndPoint(IPAddress.Loopback, 1900);
+        var response = """
+HTTP/1.1 200 OK
+DATE: Tue, 10 Dec 2024 12:00:00 GMT
+IGNORED-HEADER
+
+""";
+
+        var result = parser.Parse(response, remote);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Parse_DoesNotOverwriteDuplicateHeader()
+    {
+        var parser = new SsdpResponseParser();
+        var remote = new IPEndPoint(IPAddress.Parse("192.168.0.20"), 1900);
+        var response = """
+HTTP/1.1 200 OK
+SERVER: Linux UPnP/1.0 LGE WebOS
+SERVER: Microsoft-Windows/10.0 UPnP/1.0
+ST: urn:lge-com:service:webos-second-screen:1
+USN: uuid:abcd
+LOCATION: http://192.168.0.20:3001/desc.xml
+
+""";
+
+        var result = parser.Parse(response, remote);
+
+        Assert.NotNull(result);
+        Assert.Equal("Linux UPnP/1.0 LGE WebOS", result!.Server);
+    }
+
     [Theory]
     [InlineData("urn:lge-com:service:webos-second-screen:1", 2)]
     [InlineData("upnp:rootdevice", 1)]

@@ -12,7 +12,13 @@ using Microsoft.Extensions.Logging;
 
 namespace LGTVSwitcher.Core.LgWebOs;
 
-public sealed class SsdpLgTvDiscoveryService
+public interface ILgTvDiscoveryService
+{
+    Task<IReadOnlyList<LgTvDiscoveryResult>> DiscoverAsync(CancellationToken cancellationToken);
+}
+
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
 {
     private static readonly string[] SearchTargets =
     [

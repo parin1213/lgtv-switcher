@@ -82,6 +82,27 @@ public sealed class SnapshotEqualityComparerTests
         Assert.Equal(comparer.GetHashCode(first), comparer.GetHashCode(second));
     }
 
+    [Fact]
+    public void MonitorBounds_ToString_ReturnsReadableBounds()
+    {
+        var bounds = new MonitorBounds(1, 2, 3840, 2160);
+
+        Assert.Equal("(1,2) 3840x2160", bounds.ToString());
+    }
+
+    [Fact]
+    public void DisplaySnapshotChangedEventArgs_CopiesSnapshotsAndSetsReason()
+    {
+        var monitors = new List<MonitorSnapshot> { HdmiMonitor };
+        var args = new DisplaySnapshotChangedEventArgs(monitors, "initial");
+
+        monitors.Clear();
+
+        Assert.Single(args.Snapshots);
+        Assert.Equal("initial", args.Reason);
+        Assert.True(args.Timestamp <= DateTimeOffset.UtcNow);
+    }
+
     private static DisplaySnapshot CreateSnapshot(bool preferredOnline, string? edid, MonitorSnapshot? monitor, DateTimeOffset? timestamp = null)
     {
         var monitors = monitor is null

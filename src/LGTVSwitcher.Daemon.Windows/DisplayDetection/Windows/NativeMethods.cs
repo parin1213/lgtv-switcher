@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 namespace LGTVSwitcher.Daemon.Windows.DisplayDetection;
 
 [SupportedOSPlatform("windows")]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal static class NativeMethods
 {
     public const int ENUM_CURRENT_SETTINGS = -1;

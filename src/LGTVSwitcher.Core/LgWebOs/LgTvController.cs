@@ -10,12 +10,12 @@ namespace LGTVSwitcher.Core.LgWebOs;
 
 public sealed class LgTvController : ILgTvController
 {
-    private readonly LgTvSession _session;
+    private readonly ILgTvSession _session;
     private readonly LgTvResponseParser _responseParser;
     private readonly ILogger<LgTvController> _logger;
 
     public LgTvController(
-        LgTvSession session,
+        ILgTvSession session,
         LgTvResponseParser responseParser,
         ILogger<LgTvController> logger)
     {

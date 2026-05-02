@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 namespace LGTVSwitcher.Daemon.Windows.DisplayDetection;
 
 [SupportedOSPlatform("windows")]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class WindowsMessagePump : IAsyncDisposable, IDisposable
 {
     private Task? _pumpTask;

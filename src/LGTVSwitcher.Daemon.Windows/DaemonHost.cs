@@ -14,6 +14,7 @@ using Serilog;
 
 namespace LGTVSwitcher.Daemon.Windows;
 
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 internal static class DaemonHost
 {
     public static IHost Build(string[] args)
@@ -45,11 +46,13 @@ internal static class DaemonHost
             return new JsonFileClientKeyStore(storagePath, logger);
         });
 
-        services.AddSingleton<DefaultWebSocketTransport>();
+        services.AddSingleton<ILgTvWebSocketTransport, DefaultWebSocketTransport>();
         services.AddSingleton<LgTvResponseParser>();
         services.AddSingleton<SsdpResponseParser>();
         services.AddSingleton<SsdpLgTvDiscoveryService>();
+        services.AddSingleton<ILgTvDiscoveryService>(sp => sp.GetRequiredService<SsdpLgTvDiscoveryService>());
         services.AddSingleton<LgTvSession>();
+        services.AddSingleton<ILgTvSession>(sp => sp.GetRequiredService<LgTvSession>());
         services.AddSingleton<ILgTvController, LgTvController>();
 
         services.AddSingleton<WindowsMessagePump>();

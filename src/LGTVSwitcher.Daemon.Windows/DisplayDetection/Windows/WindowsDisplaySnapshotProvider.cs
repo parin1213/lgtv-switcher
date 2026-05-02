@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace LGTVSwitcher.Daemon.Windows.DisplayDetection;
 
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class WindowsDisplaySnapshotProvider : IDisplaySnapshotProvider, IAsyncDisposable
 {
     private readonly WindowsMonitorDetector _detector;

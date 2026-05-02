@@ -7,6 +7,7 @@ public enum WindowMessageKind
     DeviceChanged,
 }
 
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class WindowMessageEventArgs(WindowMessageKind kind, uint messageId, nuint wParam, nint lParam) : EventArgs
 {
     public WindowMessageKind Kind { get; } = kind;

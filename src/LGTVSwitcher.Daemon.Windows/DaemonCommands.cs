@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace LGTVSwitcher.Daemon.Windows;
 
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class DaemonCommands
 {
     /// <summary>デーモン起動（DisplaySyncWorker 実行）</summary>

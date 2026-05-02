@@ -1,3 +1,7 @@
+using System.IO;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Threading.Channels;
 
 using LGTVSwitcher.Core.Display;
@@ -120,6 +124,11 @@ public sealed class DisplaySyncWorker : BackgroundService
             await SyncLgTvAsync(snapshot, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex) when (IsNetworkException(ex))
+        {
+            _logger.LogWarning("LG TV transport error; skipping snapshot: {Message}", ex.Message);
+            _logger.LogDebug(ex, "LG TV transport exception details.");
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "LG TV sync failed.");
@@ -148,6 +157,12 @@ public sealed class DisplaySyncWorker : BackgroundService
         try
         {
             currentInput = await _lgTvController.GetCurrentInputAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && IsNetworkException(ex))
+        {
+            _logger.LogWarning("Failed to query LG TV input; skipping snapshot: {Message}", ex.Message);
+            _logger.LogDebug(ex, "LG TV input query exception details.");
+            return;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -199,4 +214,22 @@ public sealed class DisplaySyncWorker : BackgroundService
     private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
         => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
            (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown);
+
+    private static bool IsNetworkException(Exception ex)
+    {
+        if (ex is AggregateException aggregateException)
+        {
+            return aggregateException.InnerExceptions.Any(IsNetworkException);
+        }
+
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is WebSocketException or HttpRequestException or SocketException or IOException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

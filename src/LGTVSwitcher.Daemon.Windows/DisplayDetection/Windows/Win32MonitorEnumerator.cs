@@ -11,6 +11,7 @@ using LGTVSwitcher.Core.Display;
 namespace LGTVSwitcher.Daemon.Windows.DisplayDetection;
 
 [SupportedOSPlatform("windows")]
+[System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class Win32MonitorEnumerator : IMonitorEnumerator
 {
 
