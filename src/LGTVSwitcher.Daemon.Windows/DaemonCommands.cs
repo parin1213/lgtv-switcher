@@ -20,6 +20,17 @@ public sealed class DaemonCommands
         await host.RunAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>LG TV の現在の入力IDを表示（FallbackInputId 設定用の検出に使う）</summary>
+    [Command("tv-input")]
+    public async Task TvInput(CancellationToken ct = default)
+    {
+        using var host = DaemonHost.Build(Array.Empty<string>());
+        using var scope = host.Services.CreateScope();
+        var controller = scope.ServiceProvider.GetRequiredService<ILgTvController>();
+        var input = await controller.GetCurrentInputAsync(ct).ConfigureAwait(false);
+        Console.WriteLine($"TV current input = {input ?? "(unknown)"}");
+    }
+
     /// <summary>優先モニタの現在の入力ソースを DDC/CI で読む（検証用POC）</summary>
     [Command("probe-input")]
     public Task ProbeInput()

@@ -64,7 +64,13 @@ PCとMacで1台の高性能モニター（例：Dell U2725QE）を共有して�
 
 Dell U2725QE のような USB-C/KVM ハブ搭載モニタは、**表示ソースを別PC(Mac の USB-C 等)へ切り替えても、Windows への DisplayPort リンクを生かしたまま**にします。そのため Windows の列挙(GDI/WMI)ではモニタが常に「接続中」に見え、「今このPCを映しているか」を判別できません（このツールが TV を勝手に奪ってしまう原因でした）。
 
-そこで **DDC/CI（VCP 0x60 = Input Source）でモニタ本体に「今どの入力を映しているか」を直接問い合わせ**、優先モニタが `PreferredMonitorThisPcInputSources` の入力（既定は DisplayPort）を映しているときだけ TV を `TargetInputId` に切り替えます。別ソース(Mac)を映している間は TV に一切触れません。DDC は稀に読み取りに失敗するため、短時間リトライと直近確定値の保持で判定を安定させています。
+そこで **DDC/CI（VCP 0x60 = Input Source）でモニタ本体に「今どの入力を映しているか」を直接問い合わせ**、優先モニタが `PreferredMonitorThisPcInputSources` の入力（既定は DisplayPort）を映しているときだけ TV を `TargetInputId` に切り替えます。別ソース(Mac)を映しているときは `FallbackInputId` に切り替えます（`FallbackInputId` が空なら TV に一切触れません）。つまり **`FallbackInputId` に Mac 側の入力（例: `HDMI_2`）を設定すると、Mac に切り替えた瞬間に TV もそちらへ追従**します。DDC は稀に読み取りに失敗するため、短時間リトライと直近確定値の保持で判定を安定させています。
+
+Mac 側の入力 ID が分からない場合は、TV を Mac 表示にした状態で次のコマンドを実行すると現在の入力 ID を確認できます:
+
+```powershell
+dotnet run --project src/LGTVSwitcher.Daemon.Windows -- tv-input
+```
 
 対応値の確認は次のコマンドで行えます（優先モニタの現在入力ソースを表示）:
 

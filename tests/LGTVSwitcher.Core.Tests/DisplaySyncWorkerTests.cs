@@ -652,6 +652,33 @@ public class DisplaySyncWorkerTests
     }
 
     [Fact]
+    public async Task OtherSourceInput_WithFallbackConfigured_ShouldFollowToFallback()
+    {
+        // DDC が OtherSource(Mac) のとき、FallbackInputId が設定されていれば TV をそちら（Mac の入力）へ追従させる。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.OtherSource };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_2");
+        Assert.True(switched, "DDC が OtherSource かつ Fallback 設定時は HDMI_2 へ追従すべき。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ThisPcInput_ShouldSwitchEvenIfMonitorEnumeratedOffline()
     {
         // 列挙が一瞬 DELL を取りこぼして online=false でも、DDC が「このPCを映している」と言えば切り替える。
