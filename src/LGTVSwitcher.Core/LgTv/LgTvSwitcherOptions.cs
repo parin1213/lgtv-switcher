@@ -46,4 +46,14 @@ public sealed class LgTvSwitcherOptions
     /// LG TV の切り替えをトリガーするモニタのフレンドリ名（またはデバイス名）。
     /// </summary>
     public string PreferredMonitorName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 優先モニタが「このPCを映している」とみなす映像入力インターフェース名の一覧。
+    /// マルチ入力モニタ（例: DELL U2725QE）で、表示ソースが別PC(Mac の USB-C 等)へ移っても
+    /// DisplayPort リンクは生き続けるため、列挙有無では判別できない。この入力で実際の表示ソースを判定する。
+    /// 名前は "DisplayPort" / "HDMI" / "USB-C" など（<see cref="Display.MonitorInputSourceCatalog"/> 参照）。
+    /// 別モニタで値が異なる場合は生の値 "0x1B" / "27" も指定可。
+    /// 既定は "DisplayPort"。空にすると DDC 判定を使わず従来の列挙ベースにフォールバックする。
+    /// </summary>
+    public string[]? PreferredMonitorThisPcInputSources { get; set; } = new[] { "DisplayPort" };
 }

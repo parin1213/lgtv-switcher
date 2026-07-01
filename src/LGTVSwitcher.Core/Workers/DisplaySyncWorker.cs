@@ -19,6 +19,7 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private readonly IDisplaySnapshotProvider _snapshotProvider;
     private readonly ILgTvController _lgTvController;
+    private readonly IPreferredInputSourceProbe _inputSourceProbe;
     private readonly ILogger<DisplaySyncWorker> _logger;
     private readonly LgTvSwitcherOptions _options;
     private readonly string[] _allowedCurrentInputIds;
@@ -28,11 +29,13 @@ public sealed class DisplaySyncWorker : BackgroundService
     public DisplaySyncWorker(
         IDisplaySnapshotProvider snapshotProvider,
         ILgTvController lgTvController,
+        IPreferredInputSourceProbe inputSourceProbe,
         IOptions<LgTvSwitcherOptions> options,
         ILogger<DisplaySyncWorker> logger)
     {
         _snapshotProvider = snapshotProvider;
         _lgTvController = lgTvController;
+        _inputSourceProbe = inputSourceProbe;
         _logger = logger;
         _options = options.Value;
         _allowedCurrentInputIds = _options.AllowedCurrentInputIds?
@@ -144,12 +147,23 @@ public sealed class DisplaySyncWorker : BackgroundService
             return;
         }
 
-        var targetInput = GetTargetInput(snapshot);
+        // 優先モニタが「今このPCの入力を映しているか」を DDC/CI で都度確認する。
+        // マルチ入力モニタは表示を別PC(Mac)へ移してもリンクを維持するため、列挙有無だけでは判別できない。
+        var showing = _inputSourceProbe.Probe();
+        var effectiveOnline = showing switch
+        {
+            PreferredInputSource.ThisPc => true,
+            PreferredInputSource.OtherSource => false,
+            _ => snapshot.PreferredMonitorOnline,
+        };
+
+        var targetInput = effectiveOnline ? _options.TargetInputId : _options.FallbackInputId;
         if (string.IsNullOrWhiteSpace(targetInput))
         {
             _logger.LogInformation(
-                "No input mapping configured for preferred monitor state {State}; skipping.",
-                snapshot.PreferredMonitorOnline);
+                "No input mapping configured for preferred monitor state {State} (input source={Source}); skipping.",
+                effectiveOnline,
+                showing);
             return;
         }
 
@@ -190,7 +204,7 @@ public sealed class DisplaySyncWorker : BackgroundService
             return;
         }
 
-        _logger.LogInformation("Switching LG TV input to {Input} (preferred monitor online = {State})", targetInput, snapshot.PreferredMonitorOnline);
+        _logger.LogInformation("Switching LG TV input to {Input} (preferred monitor online = {State}, input source = {Source})", targetInput, effectiveOnline, showing);
         await _lgTvController.SwitchInputAsync(targetInput, cancellationToken).ConfigureAwait(false);
     }
 
