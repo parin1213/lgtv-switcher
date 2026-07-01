@@ -1,5 +1,6 @@
 using ConsoleAppFramework;
 
+using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.LgWebOs;
 
@@ -17,6 +18,17 @@ public sealed class DaemonCommands
     {
         using var host = DaemonHost.Build(Array.Empty<string>());
         await host.RunAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>優先モニタの現在の入力ソースを DDC/CI で読む（検証用POC）</summary>
+    [Command("probe-input")]
+    public Task ProbeInput()
+    {
+        using var host = DaemonHost.Build(Array.Empty<string>());
+        var probe = host.Services.GetRequiredService<IPreferredInputSourceProbe>();
+        var result = probe.Probe();
+        Console.WriteLine($"PreferredInputSource = {result}");
+        return Task.CompletedTask;
     }
 
     /// <summary>SSDP で TV を検出し、必要なら PreferredTvUsn を保存</summary>

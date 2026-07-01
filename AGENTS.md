@@ -26,6 +26,7 @@
   - Preferred monitor 以外のモニタ変化でも Sync が走ることを期待。この動作を破壊しないこと。
   - ネットワーク例外（WebSocket/HttpRequest/Socket）はそのスナップショットを捨て、ループは継続。
 - **LGTV 同期**: オンライン/オフライン双方で Target/Fallback を自動切替。既に目標入力なら冪等スキップ。
+- **入力ソース判定（DDC/CI）**: 優先モニタが「今このPCを映しているか」は列挙有無では判別できない（USB-C/KVM モニタは別PC表示中も DP リンクを維持するため）。`IPreferredInputSourceProbe`（Windows: `DdcInputSourceProbe` が VCP 0x60 を読む）で都度判定し、`ThisPc`→online 扱い / `OtherSource`→offline 扱い / `Unknown`→列挙ベースへフォールバック、として同期判定に反映する。**この判定は同期の度に都度実行すること**（Mac への表示切替はディスプレイイベントを発火しないため、スナップショットに焼き込むと定期同期が誤って TV を奪う）。DDC は稀に失敗するのでリトライ＋直近確定値の保持で安定させる。
 - **TLS/ClientKey**:
   - webOS の自己署名証明書対策として `DefaultWebSocketTransport` は wss 証明書検証を緩和する仕様を維持する。
   - `clientKey` / `preferredTvUsn` は sidecar `state.json`（Win: `%LOCALAPPDATA%/LgtvSwitcher/state.json`、Mac: `~/Library/Application Support/LgtvSwitcher/state.json`）に永続化。`appsettings.json` には置かない。

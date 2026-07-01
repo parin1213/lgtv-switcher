@@ -29,7 +29,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -57,7 +57,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -80,7 +80,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -105,7 +105,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -130,7 +130,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -156,7 +156,7 @@ public class DisplaySyncWorkerTests
             AllowedCurrentInputIds = new[] { "HDMI_2" },
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -182,7 +182,7 @@ public class DisplaySyncWorkerTests
             AllowedCurrentInputIds = new[] { "HDMI_2" },
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -206,7 +206,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -235,7 +235,7 @@ public class DisplaySyncWorkerTests
             SyncIntervalSeconds = 1,
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -258,7 +258,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -283,7 +283,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -314,7 +314,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -342,7 +342,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -370,7 +370,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -399,7 +399,7 @@ public class DisplaySyncWorkerTests
             AllowedCurrentInputIds = new[] { "HDMI_2" },
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -427,7 +427,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -456,7 +456,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -479,7 +479,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -513,7 +513,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -548,7 +548,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -576,7 +576,7 @@ public class DisplaySyncWorkerTests
             SyncIntervalSeconds = 1,
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -611,7 +611,7 @@ public class DisplaySyncWorkerTests
             PreferredMonitorName = "TEST",
         });
 
-        using var worker = new DisplaySyncWorker(provider, controller, options, NullLogger<DisplaySyncWorker>.Instance);
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
 
         await worker.StartAsync(CancellationToken.None);
         await WaitForStart(provider);
@@ -621,6 +621,67 @@ public class DisplaySyncWorkerTests
         Assert.True(switched, "Expected switch to proceed despite non-network query error with empty allowed list.");
 
         await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task OtherSourceInput_ShouldNotStealTvEvenIfMonitorEnumeratedOnline()
+    {
+        // 列挙上は online（DELLがDPリンクを維持）だが、DDCでは Mac(USB-C) を映していると判明したケース。
+        // TV を Mac の入力から奪ってはならない。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_1" }; // TV は Mac 入力を表示中
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.OtherSource };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "", // オフライン時は何もしない
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4", timeoutMs: 1200);
+        Assert.False(switched, "DDC が OtherSource のとき HDMI_4 へ切り替えてはならない。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ThisPcInput_ShouldSwitchEvenIfMonitorEnumeratedOffline()
+    {
+        // 列挙が一瞬 DELL を取りこぼして online=false でも、DDC が「このPCを映している」と言えば切り替える。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController();
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.ThisPc };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: false));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "DDC が ThisPc のとき HDMI_4 へ切り替えるべき。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    private sealed class FakeInputSourceProbe : IPreferredInputSourceProbe
+    {
+        public PreferredInputSource Result { get; set; } = PreferredInputSource.Unknown;
+        public PreferredInputSource Probe() => Result;
     }
 
     private static DisplaySnapshot CreateSnapshot(bool online, int ageSeconds = 0, string? edidKey = "EDID-TEST", MonitorConnectionKind connection = MonitorConnectionKind.Hdmi)

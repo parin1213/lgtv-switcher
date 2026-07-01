@@ -55,6 +55,9 @@ internal static class MacDaemonHost
 
         services.AddSingleton<IDisplaySnapshotProvider, MacDisplayWatcher>();
 
+        // macOS は DDC 入力ソース判定を未実装のため、常に Unknown を返し列挙ベース判定へフォールバックする。
+        services.AddSingleton<IPreferredInputSourceProbe, NullPreferredInputSourceProbe>();
+
         services.AddHostedService<DisplaySyncWorker>();
     }
 }

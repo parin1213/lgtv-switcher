@@ -59,6 +59,7 @@ internal static class DaemonHost
         services.AddSingleton<IMonitorEnumerator, Win32MonitorEnumerator>();
         services.AddSingleton<WindowsMonitorDetector>();
         services.AddSingleton<IDisplaySnapshotProvider, WindowsDisplaySnapshotProvider>();
+        services.AddSingleton<IPreferredInputSourceProbe, DdcInputSourceProbe>();
 
         services.AddHostedService<DisplaySyncWorker>();
     }

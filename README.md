@@ -49,9 +49,26 @@ PCとMacで1台の高性能モニター（例：Dell U2725QE）を共有して�
     // 監視対象とするモニターの「フレンドリーネーム」
     // "DELL U2725QE" など。部分一致で判定されます。
     // この名前が空だと、TVの切り替えは実行されません。
-    "PreferredMonitorName": ""
+    "PreferredMonitorName": "",
+
+    // 優先モニタが「このPCを映している」とみなす DDC/CI VCP 0x60(Input Source) の値一覧（10進）。
+    // 15=0x0F(DisplayPort), 17=0x11(HDMI), DELL U2725QE の USB-C は 25=0x19。
+    // 既定は [15]（DisplayPort）。空配列にすると DDC 判定を使わず従来の列挙ベースにフォールバック。
+    "PreferredMonitorThisPcInputSources": [ 15 ]
   }
 }
+```
+
+### なぜ DDC/CI で入力ソースを見るのか
+
+Dell U2725QE のような USB-C/KVM ハブ搭載モニタは、**表示ソースを別PC(Mac の USB-C 等)へ切り替えても、Windows への DisplayPort リンクを生かしたまま**にします。そのため Windows の列挙(GDI/WMI)ではモニタが常に「接続中」に見え、「今このPCを映しているか」を判別できません（このツールが TV を勝手に奪ってしまう原因でした）。
+
+そこで **DDC/CI（VCP 0x60 = Input Source）でモニタ本体に「今どの入力を映しているか」を直接問い合わせ**、優先モニタが `PreferredMonitorThisPcInputSources` の入力（既定は DisplayPort）を映しているときだけ TV を `TargetInputId` に切り替えます。別ソース(Mac)を映している間は TV に一切触れません。DDC は稀に読み取りに失敗するため、短時間リトライと直近確定値の保持で判定を安定させています。
+
+対応値の確認は次のコマンドで行えます（優先モニタの現在入力ソースを表示）:
+
+```powershell
+dotnet run --project src/LGTVSwitcher.Daemon.Windows -- probe-input
 ```
 
 **`PreferredMonitorName` の確認方法:**

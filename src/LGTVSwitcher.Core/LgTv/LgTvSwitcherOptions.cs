@@ -46,4 +46,13 @@ public sealed class LgTvSwitcherOptions
     /// LG TV の切り替えをトリガーするモニタのフレンドリ名（またはデバイス名）。
     /// </summary>
     public string PreferredMonitorName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 優先モニタが「このPCを映している」とみなす DDC/CI VCP 0x60(Input Source) の値一覧。
+    /// マルチ入力モニタ（例: DELL U2725QE）で、表示ソースが別PC(Mac の USB-C 等)へ移っても
+    /// DisplayPort リンクは生き続けるため、列挙有無では判別できない。この値で実際の表示入力を判定する。
+    /// 既定は DisplayPort(0x0F=15)。空にすると DDC 判定を使わず従来の列挙ベースにフォールバックする。
+    /// （参考: 0x0F=DisplayPort, 0x11=HDMI, DELL U2725QE の USB-C は 0x19。）
+    /// </summary>
+    public int[]? PreferredMonitorThisPcInputSources { get; set; } = new[] { 0x0F };
 }
