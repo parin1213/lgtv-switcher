@@ -678,6 +678,37 @@ public class DisplaySyncWorkerTests
         await worker.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task TvUnavailableOnQuery_ShouldSkipWithoutSwitching()
+    {
+        // TV がオフライン（未検出）で GetCurrentInput が登録例外を投げるとき、切替を試みず静かにスキップする。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController
+        {
+            QueryException = new LgTvRegistrationException("No LG TV discovered via SSDP or configuration."),
+        };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.ThisPc };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(1200);
+
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
     private sealed class FakeInputSourceProbe : IPreferredInputSourceProbe
     {
         public PreferredInputSource Result { get; set; } = PreferredInputSource.Unknown;

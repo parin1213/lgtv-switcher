@@ -6,6 +6,7 @@ using System.Threading.Channels;
 
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
+using LGTVSwitcher.Core.LgWebOs;
 
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,9 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly string[] _allowedCurrentInputIds;
     private readonly TimeSpan? _syncInterval;
     private volatile DisplaySnapshot? _latestSnapshot;
+
+    // TV 到達不可を Warning で通知したか。スリープ/オフ中に毎サイクル警告を出さないための遷移フラグ。
+    private bool _tvUnavailableLogged;
 
     public DisplaySyncWorker(
         IDisplaySnapshotProvider snapshotProvider,
@@ -127,14 +131,39 @@ public sealed class DisplaySyncWorker : BackgroundService
             await SyncLgTvAsync(snapshot, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
-        catch (Exception ex) when (IsNetworkException(ex))
+        catch (Exception ex) when (IsTvUnavailable(ex))
         {
-            _logger.LogWarning("LG TV transport error; skipping snapshot: {Message}", ex.Message);
-            _logger.LogDebug(ex, "LG TV transport exception details.");
+            LogTvUnavailable(ex);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "LG TV sync failed.");
+        }
+    }
+
+    // TV 到達不可（ネットワーク断・未検出/オフライン）は正常運用でも起きる。
+    // 遷移時に一度だけ Warning を出し、以降は Debug に留めてログ肥大を防ぐ。
+    private void LogTvUnavailable(Exception ex)
+    {
+        if (!_tvUnavailableLogged)
+        {
+            _logger.LogWarning("LG TV is unreachable (asleep/offline?); will keep retrying quietly: {Message}", ex.Message);
+            _tvUnavailableLogged = true;
+        }
+        else
+        {
+            _logger.LogDebug("LG TV still unreachable: {Message}", ex.Message);
+        }
+
+        _logger.LogDebug(ex, "LG TV unavailable exception details.");
+    }
+
+    private void MarkTvReachable()
+    {
+        if (_tvUnavailableLogged)
+        {
+            _logger.LogInformation("LG TV is reachable again.");
+            _tvUnavailableLogged = false;
         }
     }
 
@@ -160,7 +189,7 @@ public sealed class DisplaySyncWorker : BackgroundService
         var targetInput = effectiveOnline ? _options.TargetInputId : _options.FallbackInputId;
         if (string.IsNullOrWhiteSpace(targetInput))
         {
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "No input mapping configured for preferred monitor state {State} (input source={Source}); skipping.",
                 effectiveOnline,
                 showing);
@@ -171,11 +200,12 @@ public sealed class DisplaySyncWorker : BackgroundService
         try
         {
             currentInput = await _lgTvController.GetCurrentInputAsync(cancellationToken).ConfigureAwait(false);
+            MarkTvReachable();
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && IsNetworkException(ex))
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested && IsTvUnavailable(ex))
         {
-            _logger.LogWarning("Failed to query LG TV input; skipping snapshot: {Message}", ex.Message);
-            _logger.LogDebug(ex, "LG TV input query exception details.");
+            // TV がオフライン/未検出のときは切替も失敗するため、静かにスキップする。
+            LogTvUnavailable(ex);
             return;
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -200,7 +230,7 @@ public sealed class DisplaySyncWorker : BackgroundService
         if (!string.IsNullOrWhiteSpace(currentInput) &&
             string.Equals(currentInput, targetInput, StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogInformation("LG TV already set to {Input}; no switch required.", targetInput);
+            _logger.LogDebug("LG TV already set to {Input}; no switch required.", targetInput);
             return;
         }
 
@@ -228,6 +258,30 @@ public sealed class DisplaySyncWorker : BackgroundService
     private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
         => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
            (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown);
+
+    // TV 到達不可とみなす例外（ネットワーク断、または未検出/登録失敗＝オフライン）。
+    private static bool IsTvUnavailable(Exception ex)
+    {
+        if (IsNetworkException(ex))
+        {
+            return true;
+        }
+
+        if (ex is AggregateException aggregate)
+        {
+            return aggregate.InnerExceptions.Any(IsTvUnavailable);
+        }
+
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is LgTvRegistrationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private static bool IsNetworkException(Exception ex)
     {

@@ -33,7 +33,7 @@
 - **WindowsDisplaySnapshotProvider のメッセージループ**:
   - 非 UI の STA メッセージループを持つ Hidden Window を使用する。Windows の仕様上必須であり、非同期化・スレッド切替で破壊しないこと。
   - `DisplayDetection/` 内で `Task.Run` や `ConfigureAwait` の軽率な使用は禁止。
-- **ログ**: 初期スナップショットは Information、それ以外は Debug。WebSocket 例外は Warning 1 行、詳細は Debug。
+- **ログ**: 状態遷移・実際の入力切替のみ Information。定常反復（`Already connected`/`already set; no switch`/SSDP の discover start・summary・final result・`No input mapping…skipping`）は Debug に留めてログ肥大を防ぐ。WebSocket 例外は Warning 1 行、詳細は Debug。**TV 到達不可（ネットワーク断・未検出/オフライン=`LgTvRegistrationException`）は正常運用でも起きるため、遷移時に一度だけ Warning、以降は Debug**（`_tvUnavailableLogged` で管理。復帰時に Information）。SSDP 探索は WSL/Tailscale 等の仮想 NIC を `SsdpInterfaceFilter` で除外する。
 
 ## テスト方針
 - Core: DisplaySyncWorker のオンライン/オフライン、stale 無視、冗長スイッチ抑止、例外スキップを UT で担保。
