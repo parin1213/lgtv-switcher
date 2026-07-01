@@ -51,10 +51,11 @@ PCとMacで1台の高性能モニター（例：Dell U2725QE）を共有して�
     // この名前が空だと、TVの切り替えは実行されません。
     "PreferredMonitorName": "",
 
-    // 優先モニタが「このPCを映している」とみなす DDC/CI VCP 0x60(Input Source) の値一覧（10進）。
-    // 15=0x0F(DisplayPort), 17=0x11(HDMI), DELL U2725QE の USB-C は 25=0x19。
-    // 既定は [15]（DisplayPort）。空配列にすると DDC 判定を使わず従来の列挙ベースにフォールバック。
-    "PreferredMonitorThisPcInputSources": [ 15 ]
+    // 優先モニタが「このPCを映している」とみなす映像入力インターフェース名の一覧。
+    // 使える名前: "DisplayPort"("DP") / "HDMI" / "USB-C"("USB"/"Thunderbolt") / "DVI" / "VGA"。
+    // 別モニタで値が異なる場合は生の値 "0x1B" / "27" も指定可。
+    // 既定は ["DisplayPort"]。空配列にすると DDC 判定を使わず従来の列挙ベースにフォールバック。
+    "PreferredMonitorThisPcInputSources": [ "DisplayPort" ]
   }
 }
 ```

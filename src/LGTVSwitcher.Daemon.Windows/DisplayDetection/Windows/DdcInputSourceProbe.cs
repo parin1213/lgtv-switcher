@@ -34,6 +34,9 @@ public sealed class DdcInputSourceProbe : IPreferredInputSourceProbe
     private readonly LgTvSwitcherOptions _options;
     private readonly ILogger<DdcInputSourceProbe> _logger;
 
+    // 「このPCを映している」とみなす VCP 0x60 コード（設定の名前を解決したもの、下位バイトで比較）。
+    private readonly int[] _thisPcCodes;
+
     // 直近に確定した状態。全リトライが失敗したときにこれを維持し、一過性の失敗で判定が揺れないようにする。
     private volatile PreferredInputSource _lastKnown = PreferredInputSource.Unknown;
 
@@ -41,6 +44,32 @@ public sealed class DdcInputSourceProbe : IPreferredInputSourceProbe
     {
         _options = options.Value;
         _logger = logger;
+        _thisPcCodes = ResolveThisPcCodes(_options.PreferredMonitorThisPcInputSources);
+    }
+
+    private int[] ResolveThisPcCodes(string[]? names)
+    {
+        if (names is null || names.Length == 0)
+        {
+            return Array.Empty<int>();
+        }
+
+        var codes = new List<int>(names.Length);
+        foreach (var name in names)
+        {
+            if (MonitorInputSourceCatalog.TryResolve(name, out var code))
+            {
+                codes.Add(code & 0xFF);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "PreferredMonitorThisPcInputSources の値 '{Value}' を入力ソースへ解決できません（例: DisplayPort / HDMI / USB-C / 0x1B）。無視します。",
+                    name);
+            }
+        }
+
+        return codes.ToArray();
     }
 
     public PreferredInputSource Probe()
@@ -50,10 +79,9 @@ public sealed class DdcInputSourceProbe : IPreferredInputSourceProbe
             return PreferredInputSource.Unknown;
         }
 
-        var thisPcSources = _options.PreferredMonitorThisPcInputSources;
-        if (thisPcSources is null || thisPcSources.Length == 0)
+        if (_thisPcCodes.Length == 0)
         {
-            // DDC 判定が無効化されている（従来の列挙ベースへフォールバック）。
+            // DDC 判定が無効化されている（設定が空、または全て解決不能）。従来の列挙ベースへフォールバック。
             return PreferredInputSource.Unknown;
         }
 
@@ -69,11 +97,11 @@ public sealed class DdcInputSourceProbe : IPreferredInputSourceProbe
             if (current is not null)
             {
                 // 一部モニタは上位バイトに付随値を載せるため、入力コードは下位バイトで比較する。
-                var code = current.Value & 0xFF;
+                var code = (int)(current.Value & 0xFF);
                 var result = PreferredInputSource.OtherSource;
-                foreach (var thisPc in thisPcSources)
+                foreach (var thisPc in _thisPcCodes)
                 {
-                    if ((thisPc & 0xFF) == code)
+                    if (thisPc == code)
                     {
                         result = PreferredInputSource.ThisPc;
                         break;
