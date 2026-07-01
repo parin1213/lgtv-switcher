@@ -59,7 +59,7 @@ public sealed class LgTvSession : ILgTvSession
     {
         if (_transport.State == WebSocketState.Open && _isRegistered)
         {
-            _logger.LogInformation("Already connected and registered with LG TV");
+            _logger.LogDebug("Already connected and registered with LG TV");
             return;
         }
 
@@ -249,7 +249,8 @@ public sealed class LgTvSession : ILgTvSession
                 return new[] { ToEndpoint(match) };
             }
 
-            _logger.LogWarning("PreferredTvUsn {Usn} was not found via SSDP discovery. Skipping fallback to other TVs.", _options.PreferredTvUsn);
+            // TV がスリープ/オフの間は毎サイクル発生する正常な状態のため Debug に留める。
+            _logger.LogDebug("PreferredTvUsn {Usn} was not found via SSDP discovery. Skipping fallback to other TVs.", _options.PreferredTvUsn);
             return Array.Empty<LgTvEndpoint>();
         }
 

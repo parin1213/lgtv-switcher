@@ -65,7 +65,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
         }
 
         var aggregated = AggregateByAddress(allResponses);
-        _logger.LogInformation("SSDP final result: {Count} TV candidates after aggregation.", aggregated.Count);
+        _logger.LogDebug("SSDP final result: {Count} TV candidates after aggregation.", aggregated.Count);
         return aggregated;
     }
 
@@ -88,7 +88,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
             udp.Client.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, nic.Address.GetAddressBytes());
 
             var localEndpoint = (IPEndPoint)udp.Client.LocalEndPoint!;
-            _logger.LogInformation("SSDP discover start on {LocalIp}:{LocalPort} ({NicName})", localEndpoint.Address, localEndpoint.Port, nic.Name);
+            _logger.LogDebug("SSDP discover start on {LocalIp}:{LocalPort} ({NicName})", localEndpoint.Address, localEndpoint.Port, nic.Name);
 
             foreach (var st in SearchTargets)
             {
@@ -152,7 +152,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
                 }
             }
 
-            _logger.LogInformation("SSDP summary on {LocalIp}: sent={Sent} recv={Recv} accepted={Accepted} rejected={Rejected}",
+            _logger.LogDebug("SSDP summary on {LocalIp}: sent={Sent} recv={Recv} accepted={Accepted} rejected={Rejected}",
                 nic.Address, SearchTargets.Length, recvCount, accepted, rejected);
         }
         catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
@@ -209,7 +209,7 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
         return newlineIndex >= 0 ? text[..newlineIndex] : text;
     }
 
-    private static List<LocalInterface> GetCandidateInterfaces()
+    private List<LocalInterface> GetCandidateInterfaces()
     {
         var interfaces = new List<LocalInterface>();
 
@@ -220,6 +220,13 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
                 nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel ||
                 !nic.SupportsMulticast)
             {
+                continue;
+            }
+
+            // WSL/Tailscale/VPN 等の仮想 NIC は物理 LAN と別セグメントで応答が返らないため除外する。
+            if (SsdpInterfaceFilter.IsVirtual(nic.Name, nic.Description))
+            {
+                _logger.LogDebug("SSDP skipping virtual interface: {NicName} ({NicDescription})", nic.Name, nic.Description);
                 continue;
             }
 
