@@ -33,6 +33,7 @@ public sealed class LgTvSession : ILgTvSession
     private readonly LgTvResponseParser _responseParser;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _requestLock = new(1, 1);
+    private readonly TimeSpan? _connectTimeout;
     private string? _activeHost;
     private string? _activeUsn;
     private bool _isRegistered;
@@ -53,6 +54,9 @@ public sealed class LgTvSession : ILgTvSession
         _responseParser = responseParser;
         _discoveryService = discoveryService;
         _clientKeyStore = clientKeyStore;
+        _connectTimeout = _options.TvConnectTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(_options.TvConnectTimeoutSeconds)
+            : null;
     }
 
     public async Task EnsureConnectedAsync(CancellationToken cancellationToken)
@@ -228,7 +232,30 @@ public sealed class LgTvSession : ILgTvSession
             await _transport.DisposeAsync().ConfigureAwait(false);
         }
 
-        await _transport.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
+        // TV がスタンバイへ入ると TCP は張れても TLS ハンドシェイクの応答が返らないことがある。
+        // ここに上限が無いと接続ロックを握ったまま返らず、同期ループ全体が停止する。
+        if (_connectTimeout is { } connectTimeout)
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(connectTimeout);
+
+            try
+            {
+                await _transport.ConnectAsync(uri, timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // 到達不可として扱い、呼び出し元で次の候補への切り替えと静かなリトライに載せる。
+                throw new LgTvRegistrationException(
+                    $"Timed out connecting to LG TV at {uri} after {connectTimeout.TotalSeconds:0.#}s.",
+                    ex);
+            }
+        }
+        else
+        {
+            await _transport.ConnectAsync(uri, cancellationToken).ConfigureAwait(false);
+        }
+
         _activeHost = endpoint.Host;
         _activeUsn = endpoint.Usn;
         _isRegistered = false;

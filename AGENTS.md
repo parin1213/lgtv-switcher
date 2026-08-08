@@ -26,6 +26,7 @@
   - Preferred monitor 以外のモニタ変化でも Sync が走ることを期待。この動作を破壊しないこと。
   - ネットワーク例外（WebSocket/HttpRequest/Socket）はそのスナップショットを捨て、ループは継続。
 - **LGTV 同期**: オンライン/オフライン双方で Target/Fallback を自動切替。既に目標入力なら冪等スキップ。
+- **タイムアウト（ハング防止）**: TV がスタンバイへ入ると TCP は張れても TLS ハンドシェイクや送受信の応答が返らない。`TvConnectTimeoutSeconds`（既定 10 秒 / `LgTvSession.ConnectTransportAsync`）で接続を、`SyncTimeoutSeconds`（既定 30 秒 / `DisplaySyncWorker.TrySyncAsync`）で同期 1 サイクル全体を打ち切る。**どちらも外してはならない**——上限が無いと接続ロックを握ったまま同期ループが永久停止し、プロセスは生きていてディスプレイ検知も動くのに切替だけが死ぬ。打ち切りは TV 到達不可と同じ扱いにして次サイクルで張り直す。ペアリング待ち（`ClientKey` 未設定）だけは TV 側の承認に最大 2 分かかるため、サイクルのウォッチドッグを適用しない。
 - **入力ソース判定（DDC/CI）**: 優先モニタが「今このPCを映しているか」は列挙有無では判別できない（USB-C/KVM モニタは別PC表示中も DP リンクを維持するため）。`IPreferredInputSourceProbe`（Windows: `DdcInputSourceProbe` が VCP 0x60 を読む）で都度判定し、`ThisPc`→online 扱い / `OtherSource`→offline 扱い / `Unknown`→列挙ベースへフォールバック、として同期判定に反映する。**この判定は同期の度に都度実行すること**（Mac への表示切替はディスプレイイベントを発火しないため、スナップショットに焼き込むと定期同期が誤って TV を奪う）。DDC は稀に失敗するのでリトライ＋直近確定値の保持で安定させる。
 - **TLS/ClientKey**:
   - webOS の自己署名証明書対策として `DefaultWebSocketTransport` は wss 証明書検証を緩和する仕様を維持する。
@@ -36,7 +37,7 @@
 - **ログ**: 状態遷移・実際の入力切替のみ Information。定常反復（`Already connected`/`already set; no switch`/SSDP の discover start・summary・final result・`No input mapping…skipping`）は Debug に留めてログ肥大を防ぐ。WebSocket 例外は Warning 1 行、詳細は Debug。**TV 到達不可（ネットワーク断・未検出/オフライン=`LgTvRegistrationException`）は正常運用でも起きるため、遷移時に一度だけ Warning、以降は Debug**（`_tvUnavailableLogged` で管理。復帰時に Information）。SSDP 探索は WSL/Tailscale 等の仮想 NIC を `SsdpInterfaceFilter` で除外する。
 
 ## テスト方針
-- Core: DisplaySyncWorker のオンライン/オフライン、stale 無視、冗長スイッチ抑止、例外スキップを UT で担保。
+- Core: DisplaySyncWorker のオンライン/オフライン、stale 無視、冗長スイッチ抑止、例外スキップを UT で担保。無応答 TV でのハング打ち切り（接続タイムアウト／サイクルのウォッチドッグ）も、ハングを再現する fake で UT 化する。
 - DisplayDetection.Windows: Win32MonitorEnumerator のトークン抽出・接続種別マッピングを UT。OS 依存部分は実機検証。
 - LgWebOsClient: レスポンスパーサーの正常/エラー/登録応答を UT。トランスポートはモック差し替え可能に。
 

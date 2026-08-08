@@ -736,6 +736,101 @@ public class DisplaySyncWorkerTests
         await worker.StopAsync(CancellationToken.None);
     }
 
+    // 接続後に TV が無応答になると送受信が返らない。ウォッチドッグで打ち切らないと同期ループが永久に止まる。
+    [Fact]
+    public async Task HangingQuery_ShouldBeAbortedByWatchdog_AndPipelineContinues()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { HangingQueries = 1 };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            ClientKey = "paired-key",
+            SyncTimeoutSeconds = 1,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+
+        // 1 回目はハング → ウォッチドッグで打ち切られる
+        provider.Publish(CreateSnapshot(online: true));
+        await Task.Delay(2500);
+        Assert.Empty(controller.SwitchCalls);
+
+        // 打ち切り後もループが生きていれば、次のディスプレイ変化を処理できる
+        provider.Publish(CreateSnapshot(online: false));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_2");
+        Assert.True(switched, "ウォッチドッグ後も同期ループは継続すべき。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    // ペアリング待ちは TV 側の承認に最大 2 分かかるため、ウォッチドッグで打ち切ってはならない。
+    [Fact]
+    public async Task HangingQuery_PairingPending_ShouldNotApplyWatchdog()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { HangingQueries = int.MaxValue };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            ClientKey = null,
+            SyncTimeoutSeconds = 1,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(2500);
+
+        // 承認待ちが打ち切られていなければ、1 回目のクエリを掴んだまま
+        Assert.Equal(1, controller.QueryCalls);
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task HangingQuery_WatchdogDisabled_ShouldNotAbort()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { HangingQueries = int.MaxValue };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+            ClientKey = "paired-key",
+            SyncTimeoutSeconds = 0,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, new NullPreferredInputSourceProbe(), options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        await Task.Delay(2500);
+
+        Assert.Equal(1, controller.QueryCalls);
+        Assert.Empty(controller.SwitchCalls);
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
     private sealed class FakeInputSourceProbe : IPreferredInputSourceProbe
     {
         public PreferredInputSource Result { get; set; } = PreferredInputSource.Unknown;
@@ -826,19 +921,29 @@ public class DisplaySyncWorkerTests
         public Exception? SwitchException { get; set; }
         public int QueryCalls { get; private set; }
 
+        /// <summary>先頭から何回のクエリをハングさせるか（接続後に TV が無応答になる状態の再現）。</summary>
+        public int HangingQueries { get; set; }
+
         public Task<string?> EnsureConnectedAsync(CancellationToken cancellationToken) => Task.FromResult<string?>(null);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
-        public Task<string?> GetCurrentInputAsync(CancellationToken cancellationToken)
+        public async Task<string?> GetCurrentInputAsync(CancellationToken cancellationToken)
         {
             QueryCalls++;
+
+            if (HangingQueries > 0)
+            {
+                HangingQueries--;
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+
             if (QueryException is not null)
             {
                 throw QueryException;
             }
 
-            return Task.FromResult(CurrentInput);
+            return CurrentInput;
         }
 
         public Task SwitchInputAsync(string inputId, CancellationToken cancellationToken)
