@@ -67,6 +67,71 @@ public sealed class LgTvSessionTests
         Assert.Equal("configured-tv.local", transport.ConnectUris[0].Host);
     }
 
+    // TV がスタンバイへ入ると TLS ハンドシェイクが返らないことがある。
+    // 上限が無いと接続ロックを握ったまま同期ループ全体が止まるため、必ず打ち切る。
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectHangs_TimesOutAndReportsUnavailable()
+    {
+        var transport = new FakeTransport { HangingConnects = 1 };
+        var discovery = new FakeDiscovery(new LgTvDiscoveryResult("192.168.0.20", null, "uuid:tv", "LG", "st"));
+        var options = Options.Create(new LgTvSwitcherOptions { TvConnectTimeoutSeconds = 1 });
+        var session = CreateSession(transport, discovery, new FakeClientKeyStore(), options);
+
+        // 打ち切りが効かないと戻らないため、テスト側にも上限を置いて失敗として顕在化させる。
+        var error = await Assert.ThrowsAsync<LgTvRegistrationException>(
+            () => session.EnsureConnectedAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10)));
+
+        Assert.Contains("Timed out connecting", error.InnerException?.Message ?? error.Message);
+        Assert.Single(transport.ConnectUris);
+        Assert.True(transport.DisposeCalls >= 1, "タイムアウト後はトランスポートを破棄して張り直せる状態にする。");
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectHangs_FallsBackToNextCandidate()
+    {
+        var transport = new FakeTransport { HangingConnects = 1 };
+        transport.Enqueue("""{"type":"registered","payload":{"client-key":"key-1"}}""");
+        var discovery = new FakeDiscovery(
+            new LgTvDiscoveryResult("192.168.0.10", "http://asleep-tv.local:3001/desc.xml", "uuid:asleep", "LG", "st"),
+            new LgTvDiscoveryResult("192.168.0.20", "http://awake-tv.local:3001/desc.xml", "uuid:awake", "LG", "st"));
+        var options = Options.Create(new LgTvSwitcherOptions { TvConnectTimeoutSeconds = 1 });
+        var session = CreateSession(transport, discovery, new FakeClientKeyStore(), options);
+
+        await session.EnsureConnectedAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(2, transport.ConnectUris.Count);
+        Assert.Equal("asleep-tv.local", transport.ConnectUris[0].Host);
+        Assert.Equal("awake-tv.local", transport.ConnectUris[1].Host);
+        Assert.Equal("key-1", options.Value.ClientKey);
+    }
+
+    // 停止要求によるキャンセルはタイムアウトではないため、登録例外に変換してはならない。
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectCancelledByCaller_ThrowsOperationCanceled()
+    {
+        var transport = new FakeTransport { HangingConnects = 1 };
+        var discovery = new FakeDiscovery(new LgTvDiscoveryResult("192.168.0.20", null, "uuid:tv", "LG", "st"));
+        var options = Options.Create(new LgTvSwitcherOptions { TvConnectTimeoutSeconds = 30 });
+        var session = CreateSession(transport, discovery, new FakeClientKeyStore(), options);
+        using var cts = new CancellationTokenSource(100);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => session.EnsureConnectedAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectTimeoutDisabled_UsesCallerToken()
+    {
+        var transport = new FakeTransport { HangingConnects = 1 };
+        var discovery = new FakeDiscovery(new LgTvDiscoveryResult("192.168.0.20", null, "uuid:tv", "LG", "st"));
+        var options = Options.Create(new LgTvSwitcherOptions { TvConnectTimeoutSeconds = 0 });
+        var session = CreateSession(transport, discovery, new FakeClientKeyStore(), options);
+        using var cts = new CancellationTokenSource(100);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => session.EnsureConnectedAsync(cts.Token));
+    }
+
     [Fact]
     public async Task DisposeAsync_IsIdempotent()
     {
@@ -150,13 +215,23 @@ public sealed class LgTvSessionTests
         public int RequestSendCount { get; private set; }
         public int DisposeCalls { get; private set; }
         public int MaxConcurrentRequests { get; private set; }
+
+        /// <summary>先頭から何回の接続をハングさせるか（TV スタンバイ時の TLS 無応答の再現）。</summary>
+        public int HangingConnects { get; set; }
+
         private int _activeRequests;
 
-        public Task ConnectAsync(Uri uri, CancellationToken cancellationToken)
+        public async Task ConnectAsync(Uri uri, CancellationToken cancellationToken)
         {
             ConnectUris.Add(uri);
+
+            if (HangingConnects > 0)
+            {
+                HangingConnects--;
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+
             State = WebSocketState.Open;
-            return Task.CompletedTask;
         }
 
         public Task SendAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)

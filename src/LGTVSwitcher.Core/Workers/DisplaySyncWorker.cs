@@ -25,6 +25,7 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly LgTvSwitcherOptions _options;
     private readonly string[] _allowedCurrentInputIds;
     private readonly TimeSpan? _syncInterval;
+    private readonly TimeSpan? _syncTimeout;
     private volatile DisplaySnapshot? _latestSnapshot;
 
     // TV 到達不可を Warning で通知したか。スリープ/オフ中に毎サイクル警告を出さないための遷移フラグ。
@@ -50,6 +51,9 @@ public sealed class DisplaySyncWorker : BackgroundService
             ?? Array.Empty<string>();
         _syncInterval = _options.SyncIntervalSeconds > 0
             ? TimeSpan.FromSeconds(_options.SyncIntervalSeconds)
+            : null;
+        _syncTimeout = _options.SyncTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(_options.SyncTimeoutSeconds)
             : null;
     }
 
@@ -126,11 +130,31 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private async Task TrySyncAsync(DisplaySnapshot snapshot, CancellationToken ct)
     {
+        // 接続後に TV が無応答になると送受信が返らず、1 サイクルが永久に返らない。
+        // ウォッチドッグで打ち切り、次サイクルで張り直す。
+        // ただしペアリング待ち（ClientKey 未設定）は TV 側の承認に最大 2 分かかるため適用しない。
+        var timeout = string.IsNullOrWhiteSpace(_options.ClientKey) ? null : _syncTimeout;
+
+        using var timeoutCts = timeout is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (timeout is { } watchdog)
+        {
+            timeoutCts!.CancelAfter(watchdog);
+        }
+
         try
         {
-            await SyncLgTvAsync(snapshot, ct).ConfigureAwait(false);
+            await SyncLgTvAsync(snapshot, timeoutCts?.Token ?? ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (OperationCanceledException ex) when (timeoutCts is { IsCancellationRequested: true })
+        {
+            // 応答が返らないのは到達不可と同じ扱いにして、ログを肥大させずに次サイクルで再試行する。
+            LogTvUnavailable(new TimeoutException(
+                $"LG TV sync did not complete within {timeout!.Value.TotalSeconds:0.#}s.",
+                ex));
+        }
         catch (Exception ex) when (IsTvUnavailable(ex))
         {
             LogTvUnavailable(ex);

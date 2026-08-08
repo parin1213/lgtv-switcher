@@ -43,6 +43,20 @@ public sealed class LgTvSwitcherOptions
     public int SyncIntervalSeconds { get; set; }
 
     /// <summary>
+    /// LG TV への WebSocket 接続（TLS ハンドシェイクを含む）を打ち切るまでの秒数。0 以下は無効。
+    /// TV がスタンバイへ入ると TCP は張れても TLS 応答が返らないことがあり、
+    /// 上限が無いと接続ロックを握ったまま同期ループ全体が停止する。
+    /// </summary>
+    public int TvConnectTimeoutSeconds { get; set; } = 10;
+
+    /// <summary>
+    /// 同期 1 サイクル全体を打ち切るまでの秒数。0 以下は無効。
+    /// 接続後に TV が無応答になると送受信が返らないため、サイクルにも上限を設ける。
+    /// ペアリング待ち（<see cref="ClientKey"/> 未設定）の間は TV 側の承認に最大 2 分かかるため適用しない。
+    /// </summary>
+    public int SyncTimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
     /// LG TV の切り替えをトリガーするモニタのフレンドリ名（またはデバイス名）。
     /// </summary>
     public string PreferredMonitorName { get; set; } = string.Empty;
