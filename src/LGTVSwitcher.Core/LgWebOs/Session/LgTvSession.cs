@@ -338,14 +338,23 @@ public sealed class LgTvSession : ILgTvSession
             return literal.ToString();
         }
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(HostResolveTimeout);
+        // macOS ではキャンセルが名前解決に効かず、mDNS が応答しないと 5 秒待たされる。待ち時間で打ち切る。
+        var lookup = Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, cancellationToken);
+        var finished = await Task.WhenAny(lookup, Task.Delay(HostResolveTimeout, cancellationToken)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (finished != lookup)
+        {
+            _ = lookup.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+            _logger.LogDebug("Resolving TvHost {Host} timed out after {Seconds}s.", host, HostResolveTimeout.TotalSeconds);
+            return null;
+        }
+
         try
         {
-            var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, timeoutCts.Token).ConfigureAwait(false);
+            var addresses = await lookup.ConfigureAwait(false);
             return addresses.FirstOrDefault()?.ToString();
         }
-        catch (Exception ex) when (ex is SocketException || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        catch (SocketException ex)
         {
             _logger.LogDebug("Could not resolve TvHost {Host}: {Message}", host, ex.Message);
             return null;
