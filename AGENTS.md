@@ -28,6 +28,8 @@
 - **LGTV 同期**: オンライン/オフライン双方で Target/Fallback を自動切替。既に目標入力なら冪等スキップ。
 - **タイムアウト（ハング防止）**: TV がスタンバイへ入ると TCP は張れても TLS ハンドシェイクや送受信の応答が返らない。`TvConnectTimeoutSeconds`（既定 10 秒 / `LgTvSession.ConnectTransportAsync`）で接続を、`SyncTimeoutSeconds`（既定 30 秒 / `DisplaySyncWorker.TrySyncAsync`）で同期 1 サイクル全体を打ち切る。**どちらも外してはならない**——上限が無いと接続ロックを握ったまま同期ループが永久停止し、プロセスは生きていてディスプレイ検知も動くのに切替だけが死ぬ。打ち切りは TV 到達不可と同じ扱いにして次サイクルで張り直す。ペアリング待ち（`ClientKey` 未設定）だけは TV 側の承認に最大 2 分かかるため、サイクルのウォッチドッグを適用しない。
 - **入力ソース判定（DDC/CI）**: 優先モニタが「今このPCを映しているか」は列挙有無では判別できない（USB-C/KVM モニタは別PC表示中も DP リンクを維持するため）。`IPreferredInputSourceProbe`（Windows: `DdcInputSourceProbe` が VCP 0x60 を読む）で都度判定し、`ThisPc`→online 扱い / `OtherSource`→offline 扱い / `Unknown`→列挙ベースへフォールバック、として同期判定に反映する。**この判定は同期の度に都度実行すること**（Mac への表示切替はディスプレイイベントを発火しないため、スナップショットに焼き込むと定期同期が誤って TV を奪う）。DDC は稀に失敗するのでリトライ＋直近確定値の保持で安定させる。Windows と Mac の両方で常駐させる構成では `SkipSyncWhenInputSourceUnknown=true` とし、`Unknown` のとき列挙ベースへフォールバックせず同期を見送る（推測で切り替えると、もう一方のデーモンと TV を奪い合うため）。
+- **Mac 側の DDC とネットワーク**: Mac からの DDC 応答は化けるため、`InputSourceStabilizer` の多数決（7 回中 4 回一致）＋ 2 回連続一致で確定し、判定不能の回は数えない。U2725QE を Windows 表示にすると Dell 経由の有線 LAN が Windows 側へ移り、Mac は Wi-Fi だけになって SSDP も mDNS も届かない。そのため `LgTvSession` は最後に接続できた TV の IP（`LastKnownTvAddress`）へフォールバックする。
+- **設定の配列に初期値を入れない**: .NET の設定バインドは配列をプロパティ初期値へ追記する。既定値は `ResolveThisPcInputSources()` のように読み出し側で補う。
 - **TLS/ClientKey**:
   - webOS の自己署名証明書対策として `DefaultWebSocketTransport` は wss 証明書検証を緩和する仕様を維持する。
   - `clientKey` / `preferredTvUsn` は sidecar `state.json`（Win: `%LOCALAPPDATA%/LgtvSwitcher/state.json`、Mac: `~/Library/Application Support/LgtvSwitcher/state.json`）に永続化。`appsettings.json` には置かない。

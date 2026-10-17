@@ -122,7 +122,9 @@ Windows 版と同じ判定を Mac 側でも行い、どちらの PC が眠って
 * Apple Silicon の DDC は [m1ddc](https://github.com/waydabber/m1ddc) で読みます（`brew install m1ddc`）。
 * 判定は Windows 版の裏返しです。U2725QE が USB-C（Mac）を映していれば `TargetInputId`（Mac の入力 `HDMI_2`）、DisplayPort（Windows）なら `FallbackInputId`（`HDMI_4`）へ切り替えます。
 * `SkipSyncWhenInputSourceUnknown: true` にしてあり、DDC で判定できないときは TV に触れません。
-* Mac からの DDC 応答は約 3% の割合で化けるため、同じ値が 3 回続き、かつ 2 回の判定で一致したときだけ入力の変化とみなします。
+* Mac からの DDC 応答は化けます（Mac 表示中は約 3%、Windows 表示中は約 25%）。最大 7 回読んで同じ値が 4 回出たら確定し、さらに 2 回の判定で一致したときだけ入力の変化とみなします。
+* U2725QE の USB-C ハブ経由の有線 LAN は、Dell を Windows 表示にすると Windows 側へ移ります。そのあいだ Mac は Wi-Fi だけになり、SSDP も `lgwebostv.local` も TV に届かないため、最後に接続できた TV の IP（`state.json` の `lastKnownTvAddress`）へ直接つなぎます。
+* LaunchAgent は `ProcessType=Standard` で動かします。`Background` だと macOS がタイマーと CPU を絞り、判定と切替が数秒ずつ遅れます。
 
 ### Windows と Mac の連携（どちらが TV を切り替えるか）
 
@@ -130,7 +132,8 @@ Windows 版と同じ判定を Mac 側でも行い、どちらの PC が眠って
 
 * 先に起動していた方がリーダーを持ち続けます。後から起動した方は待機します。
 * リーダーと 10 秒（`PeerTimeoutSeconds`）連絡が取れなければ、待機側が引き継ぎます。
-* Dell が外れて入力を判定できない側（Dell から外した MacBook 等）は、相手にリーダーを譲ります。
+* Dell が外れて入力を判定できない側（Dell から外した MacBook 等）は、相手にリーダーを譲ります。入力の切替中に数秒判定できないだけでは譲りません（10 秒続いたら譲る）。
+* リーダーを引き継いだ側は、定期同期を待たずにすぐ同期し直します。
 * Windows 側は `install.ps1` がファイアウォールの受信許可（プライベート ネットワーク）を追加します。
 * `PeerHost` は IP で書いています。DHCP で IP が変わると連携が切れ、両方が単独のリーダーとして動きます。ルーターで固定割り当てにしてください。
 
