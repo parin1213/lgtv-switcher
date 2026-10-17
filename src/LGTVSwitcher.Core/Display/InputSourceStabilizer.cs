@@ -8,6 +8,7 @@ namespace LGTVSwitcher.Core.Display;
 /// （実測: Mac 表示中は約 3%、Windows 表示中は約 25%）。化けた値はばらばらなので、次の 2 段で確定させる。
 /// 1. 1 回の判定内: 最大 <see cref="MaxReads"/> 回読み、同じ値が <see cref="RequiredMatchingReads"/> 回出たら確定する。
 /// 2. 判定をまたいで: 直近の確定状態から別の状態へ移るのは、その状態が <see cref="RequiredConsecutiveProbes"/> 回続いたときだけ。
+///    判定できなかった回（Unknown）は数えず、連続も途切れさせない。
 /// </remarks>
 public sealed class InputSourceStabilizer
 {
@@ -50,10 +51,10 @@ public sealed class InputSourceStabilizer
     /// </summary>
     public PreferredInputSource Apply(PreferredInputSource observed)
     {
+        // 判定できなかった回は材料が無いだけなので、確定状態も移行中の数も動かさない。
+        // Dell が Windows 表示中は判定不能が頻繁に挟まり、数を戻すと別の状態へいつまでも移れない。
         if (observed == PreferredInputSource.Unknown)
         {
-            _pending = PreferredInputSource.Unknown;
-            _pendingCount = 0;
             return _confirmed;
         }
 

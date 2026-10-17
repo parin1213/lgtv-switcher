@@ -76,13 +76,25 @@ public class InputSourceStabilizerTests
     }
 
     [Fact]
-    public void Apply_UnknownBetweenContradictions_ResetsPending()
+    public void Apply_UnknownBetweenContradictions_DoesNotBreakRun()
     {
+        // Dell が Windows 表示中は判定不能が頻繁に挟まる。挟まっても OtherSource が 2 回出れば移る。
         var stabilizer = new InputSourceStabilizer();
         stabilizer.Apply(PreferredInputSource.ThisPc);
 
         stabilizer.Apply(PreferredInputSource.OtherSource);
         Assert.Equal(PreferredInputSource.ThisPc, stabilizer.Apply(PreferredInputSource.Unknown));
+        Assert.Equal(PreferredInputSource.OtherSource, stabilizer.Apply(PreferredInputSource.OtherSource));
+    }
+
+    [Fact]
+    public void Apply_ContradictionInterruptedByConfirmedState_ResetsRun()
+    {
+        var stabilizer = new InputSourceStabilizer();
+        stabilizer.Apply(PreferredInputSource.ThisPc);
+
+        stabilizer.Apply(PreferredInputSource.OtherSource);
+        stabilizer.Apply(PreferredInputSource.ThisPc);
         Assert.Equal(PreferredInputSource.ThisPc, stabilizer.Apply(PreferredInputSource.OtherSource));
     }
 

@@ -58,7 +58,8 @@ public sealed class MacDdcInputSourceProbe : IPreferredInputSourceProbe
                 return PreferredInputSource.Unknown;
             }
 
-            var code = InputSourceStabilizer.FindStableValue(ReadInputs(display.Index));
+            var reads = new List<int?>();
+            var code = InputSourceStabilizer.FindStableValue(ReadInputs(display.Index).Select(r => { reads.Add(r); return r; }));
             var observed = code switch
             {
                 null => PreferredInputSource.Unknown,
@@ -68,11 +69,12 @@ public sealed class MacDdcInputSourceProbe : IPreferredInputSourceProbe
 
             var result = _stabilizer.Apply(observed);
             _logger.LogDebug(
-                "DDC input source of '{Monitor}' = {Code} (observed {Observed}, confirmed {Result}).",
+                "DDC input source of '{Monitor}' = {Code} (observed {Observed}, confirmed {Result}, reads [{Reads}]).",
                 display.Name,
                 code is { } v ? $"0x{v & 0xFF:X2}" : "(unstable)",
                 observed,
-                result);
+                result,
+                string.Join(",", reads.Select(r => r?.ToString() ?? "-")));
             return result;
         }
     }
