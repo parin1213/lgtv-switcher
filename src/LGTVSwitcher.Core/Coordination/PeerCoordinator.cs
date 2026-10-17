@@ -128,6 +128,14 @@ public sealed class PeerCoordinator : BackgroundService, ILeadershipState
         {
             var timeout = TimeSpan.FromSeconds(Math.Max(1, _options.PeerTimeoutSeconds));
             var peer = _peer is not null && DateTimeOffset.UtcNow - _peerSeenAt <= timeout ? _peer : null;
+
+            // 起動直後の 1 回目の問い合わせは間に合わないことがある。相手から連絡が来るのを 2 周期待ってから
+            // リーダーを名乗る。待たないと、先に動いていたリーダーと数秒間両方で TV を切り替えてしまう。
+            var startupGrace = TimeSpan.FromSeconds(2 * Math.Max(1, _options.PeerHeartbeatSeconds));
+            if (_role == PeerRole.Starting && peer is null && DateTimeOffset.UtcNow - _startedAt < startupGrace)
+            {
+                return;
+            }
             var self = new PeerStatus(_nodeId, _role, _startedAt, _leaderSince, _eligibility.IsEligible);
             var next = LeaderElection.Decide(self, peer);
             if (next == _role)
