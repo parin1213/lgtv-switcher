@@ -7,28 +7,45 @@ namespace LGTVSwitcher.Core.Tests;
 public class InputSourceStabilizerTests
 {
     [Fact]
-    public void FindStableValue_ThreeIdenticalReads_ReturnsValue()
+    public void FindStableValue_FourMatchingReads_ReturnsValue()
     {
-        Assert.Equal(25, InputSourceStabilizer.FindStableValue([25, 25, 25]));
+        Assert.Equal(25, InputSourceStabilizer.FindStableValue([25, 25, 25, 25]));
     }
 
     [Fact]
-    public void FindStableValue_GarbledReadBreaksRun_ContinuesAfterIt()
+    public void FindStableValue_GarbledReadsInterleaved_StillConfirms()
     {
-        // U2725QE を Mac から読んだときの実測パターン: 0x19 の合間に化けた値が混じる。
-        Assert.Equal(25, InputSourceStabilizer.FindStableValue([25, 99, 25, 25, 25]));
+        // U2725QE を Windows 表示中に Mac から読んだ実測パターン: 0x0F の合間に約 25% 化けた値が混じる。
+        Assert.Equal(15, InputSourceStabilizer.FindStableValue([15, 99, 15, -102, 15, 15]));
     }
 
     [Fact]
-    public void FindStableValue_SingleGarbledRead_IsNotConfirmed()
+    public void FindStableValue_ScatteredGarbage_IsNotConfirmed()
     {
-        Assert.Null(InputSourceStabilizer.FindStableValue([25, 1, 25, 0, 25, -7]));
+        Assert.Null(InputSourceStabilizer.FindStableValue([25, 1, 25, 0, 25, -7, 99]));
     }
 
     [Fact]
-    public void FindStableValue_FailedReadBreaksRun()
+    public void FindStableValue_FailedReadsAreSkipped()
     {
-        Assert.Null(InputSourceStabilizer.FindStableValue([25, 25, null, 25, 25]));
+        Assert.Equal(25, InputSourceStabilizer.FindStableValue([25, null, 25, null, 25, 25]));
+    }
+
+    [Fact]
+    public void FindStableValue_StopsReadingOnceConfirmed()
+    {
+        var consumed = 0;
+        IEnumerable<int?> Reads()
+        {
+            while (true)
+            {
+                consumed++;
+                yield return 15;
+            }
+        }
+
+        Assert.Equal(15, InputSourceStabilizer.FindStableValue(Reads()));
+        Assert.Equal(InputSourceStabilizer.RequiredMatchingReads, consumed);
     }
 
     [Fact]

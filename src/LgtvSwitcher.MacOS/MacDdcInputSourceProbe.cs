@@ -19,9 +19,7 @@ namespace LgtvSwitcher.MacOS;
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 public sealed class MacDdcInputSourceProbe : IPreferredInputSourceProbe
 {
-    // 3 回一致を拾うまでに読む上限。化ける率は約 3% なので通常は 3 回で確定する。
-    private const int MaxReads = 6;
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(120);
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(60);
 
     private readonly M1ddcClient _m1ddc;
     private readonly LgTvSwitcherOptions _options;
@@ -81,7 +79,7 @@ public sealed class MacDdcInputSourceProbe : IPreferredInputSourceProbe
 
     private IEnumerable<int?> ReadInputs(int displayIndex)
     {
-        for (var i = 0; i < MaxReads; i++)
+        for (var i = 0; i < InputSourceStabilizer.MaxReads; i++)
         {
             if (i > 0)
             {

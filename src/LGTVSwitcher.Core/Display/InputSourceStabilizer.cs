@@ -4,14 +4,15 @@ namespace LGTVSwitcher.Core.Display;
 /// 化けやすい DDC 応答から、入力ソースの判定を安定して確定させる。
 /// </summary>
 /// <remarks>
-/// Apple Silicon から U2725QE の VCP 0x60 を読むと、0x19 の合間に 0x00 / 0x01 / 0x63 / 負値などが混じる（実測で約 3%）。
-/// 化けた 1 回を入力切替と取り違えると TV を誤って切り替えるため、次の 2 段で確定させる。
-/// 1. 1 回の判定内: 同じ値が <see cref="RequiredIdenticalReads"/> 回続いたときだけ値を確定する。
+/// Apple Silicon から U2725QE の VCP 0x60 を読むと、正しい値の合間に 0x00 / 0x01 / 0x63 / 負値などが混じる
+/// （実測: Mac 表示中は約 3%、Windows 表示中は約 25%）。化けた値はばらばらなので、次の 2 段で確定させる。
+/// 1. 1 回の判定内: 最大 <see cref="MaxReads"/> 回読み、同じ値が <see cref="RequiredMatchingReads"/> 回出たら確定する。
 /// 2. 判定をまたいで: 直近の確定状態から別の状態へ移るのは、その状態が <see cref="RequiredConsecutiveProbes"/> 回続いたときだけ。
 /// </remarks>
 public sealed class InputSourceStabilizer
 {
-    public const int RequiredIdenticalReads = 3;
+    public const int MaxReads = 7;
+    public const int RequiredMatchingReads = 4;
     public const int RequiredConsecutiveProbes = 2;
 
     private PreferredInputSource _confirmed = PreferredInputSource.Unknown;
@@ -21,27 +22,23 @@ public sealed class InputSourceStabilizer
     public PreferredInputSource Confirmed => _confirmed;
 
     /// <summary>
-    /// 連続した読み取り値から、同じ値が <see cref="RequiredIdenticalReads"/> 回続いた最初の値を返す。無ければ null。
-    /// 読み取り失敗は null で渡す（連続を途切れさせる）。
+    /// 読み取り値のうち、<see cref="RequiredMatchingReads"/> 回出た最初の値を返す。無ければ null。
+    /// 読み取り失敗は null で渡す。確定した時点で読み取りをやめる（残りの DDC 読み取りを省く）。
     /// </summary>
     public static int? FindStableValue(IEnumerable<int?> reads)
     {
-        int? previous = null;
-        var run = 0;
-        foreach (var read in reads)
+        var counts = new Dictionary<int, int>();
+        foreach (var read in reads.Take(MaxReads))
         {
-            if (read is null)
+            if (read is not { } value)
             {
-                previous = null;
-                run = 0;
                 continue;
             }
 
-            run = read == previous ? run + 1 : 1;
-            previous = read;
-            if (run >= RequiredIdenticalReads)
+            counts[value] = counts.GetValueOrDefault(value) + 1;
+            if (counts[value] >= RequiredMatchingReads)
             {
-                return read;
+                return value;
             }
         }
 
