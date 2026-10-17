@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -34,7 +35,10 @@ public sealed class LgTvSession : ILgTvSession
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _requestLock = new(1, 1);
     private readonly TimeSpan? _connectTimeout;
+    private static readonly TimeSpan HostResolveTimeout = TimeSpan.FromSeconds(2);
+
     private string? _activeHost;
+    private string? _lastKnownTvAddress;
     private string? _activeUsn;
     private bool _isRegistered;
     private bool _stateLoaded;
@@ -76,6 +80,7 @@ public sealed class LgTvSession : ILgTvSession
                 var state = await _clientKeyStore.GetStateAsync(cancellationToken).ConfigureAwait(false);
                 _options.ClientKey ??= state.ClientKey;
                 _options.PreferredTvUsn ??= state.PreferredTvUsn;
+                _lastKnownTvAddress = state.LastKnownTvAddress;
                 _stateLoaded = true;
             }
 
@@ -286,13 +291,65 @@ public sealed class LgTvSession : ILgTvSession
             return discovered.Select(ToEndpoint).ToList();
         }
 
+        return await ResolveFallbackCandidatesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // SSDP で見つからないときの接続先。TvHost を名前解決できればその IP、できなければ最後に接続できた IP。
+    // Mac は Dell を Windows 表示にすると Dell 経由の有線 LAN を失って Wi-Fi だけになり、
+    // Wi-Fi からは SSDP も mDNS（lgwebostv.local）も届かないが、IP を直接指定すれば TV に届く。
+    private async Task<IReadOnlyList<LgTvEndpoint>> ResolveFallbackCandidatesAsync(CancellationToken cancellationToken)
+    {
+        var candidates = new List<LgTvEndpoint>();
         if (!string.IsNullOrWhiteSpace(_options.TvHost))
         {
-            _logger.LogWarning("No LG TV discovered via SSDP. Falling back to configured TvHost {Host}.", _options.TvHost);
-            return new[] { new LgTvEndpoint(_options.TvHost, null, null) };
+            var resolved = await TryResolveIPv4Async(_options.TvHost, cancellationToken).ConfigureAwait(false);
+            if (resolved is not null)
+            {
+                candidates.Add(new LgTvEndpoint(resolved, null, null));
+            }
         }
 
-        return Array.Empty<LgTvEndpoint>();
+        if (!string.IsNullOrWhiteSpace(_lastKnownTvAddress) &&
+            candidates.All(c => !string.Equals(c.Host, _lastKnownTvAddress, StringComparison.OrdinalIgnoreCase)))
+        {
+            candidates.Add(new LgTvEndpoint(_lastKnownTvAddress, null, null));
+        }
+
+        if (candidates.Count == 0 && !string.IsNullOrWhiteSpace(_options.TvHost))
+        {
+            candidates.Add(new LgTvEndpoint(_options.TvHost, null, null));
+        }
+
+        if (candidates.Count > 0)
+        {
+            _logger.LogWarning(
+                "No LG TV discovered via SSDP. Falling back to {Candidates} (TvHost {Host}).",
+                string.Join(", ", candidates.Select(c => c.Host)),
+                _options.TvHost);
+        }
+
+        return candidates;
+    }
+
+    private async Task<string?> TryResolveIPv4Async(string host, CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(host, out var literal))
+        {
+            return literal.ToString();
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(HostResolveTimeout);
+        try
+        {
+            var addresses = await Dns.GetHostAddressesAsync(host, AddressFamily.InterNetwork, timeoutCts.Token).ConfigureAwait(false);
+            return addresses.FirstOrDefault()?.ToString();
+        }
+        catch (Exception ex) when (ex is SocketException || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            _logger.LogDebug("Could not resolve TvHost {Host}: {Message}", host, ex.Message);
+            return null;
+        }
     }
 
     private async Task PersistRegistrationStateAsync(
@@ -307,6 +364,16 @@ public sealed class LgTvSession : ILgTvSession
             if (_clientKeyStore is not null)
             {
                 await _clientKeyStore.PersistClientKeyAsync(registrationResult.ClientKey!, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (IPAddress.TryParse(endpoint.Host, out _) &&
+            !string.Equals(endpoint.Host, _lastKnownTvAddress, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastKnownTvAddress = endpoint.Host;
+            if (_clientKeyStore is not null)
+            {
+                await _clientKeyStore.PersistLastKnownTvAddressAsync(endpoint.Host, cancellationToken).ConfigureAwait(false);
             }
         }
 

@@ -45,12 +45,19 @@ public sealed class JsonFileClientKeyStore : ILgTvClientKeyStore
     }
 
     public async Task PersistClientKeyAsync(string clientKey, CancellationToken cancellationToken)
-        => await PersistStateAsync(clientKey, preferredTvUsn: null, cancellationToken).ConfigureAwait(false);
+        => await PersistStateAsync(clientKey, preferredTvUsn: null, lastKnownTvAddress: null, cancellationToken).ConfigureAwait(false);
 
     public async Task PersistPreferredTvUsnAsync(string preferredTvUsn, CancellationToken cancellationToken)
-        => await PersistStateAsync(clientKey: null, preferredTvUsn, cancellationToken).ConfigureAwait(false);
+        => await PersistStateAsync(clientKey: null, preferredTvUsn, lastKnownTvAddress: null, cancellationToken).ConfigureAwait(false);
 
-    private async Task PersistStateAsync(string? clientKey, string? preferredTvUsn, CancellationToken cancellationToken)
+    public async Task PersistLastKnownTvAddressAsync(string address, CancellationToken cancellationToken)
+        => await PersistStateAsync(clientKey: null, preferredTvUsn: null, address, cancellationToken).ConfigureAwait(false);
+
+    private async Task PersistStateAsync(
+        string? clientKey,
+        string? preferredTvUsn,
+        string? lastKnownTvAddress,
+        CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -60,6 +67,7 @@ public sealed class JsonFileClientKeyStore : ILgTvClientKeyStore
             {
                 ClientKey = clientKey ?? current.ClientKey,
                 PreferredTvUsn = preferredTvUsn ?? current.PreferredTvUsn,
+                LastKnownTvAddress = lastKnownTvAddress ?? current.LastKnownTvAddress,
             };
 
             var dir = Path.GetDirectoryName(_filePath);
