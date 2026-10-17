@@ -2,6 +2,7 @@
 # macOS 版デーモンを発行し、ログイン中は常駐する LaunchAgent として登録する。
 # 管理者権限は不要（ユーザー領域に配置し、ユーザーの GUI セッションで動かす）。
 # GUI セッションで動かすのは、DDC（IOAVService）がログイン中のセッションからしか読めないため。
+# ProcessType を Background にすると macOS がタイマーと CPU を絞り、DDC の判定と TV の切替が数秒ずつ遅れるため Standard にする。
 # .app バンドルにするのは、macOS のローカルネットワーク権限が素の実行ファイルには付与されず、
 # launchd から起動すると TV への接続が "No route to host" で遮断されるため。
 set -euo pipefail
@@ -81,7 +82,7 @@ cat > "$PLIST" <<EOF
   <key>ThrottleInterval</key>
   <integer>30</integer>
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>Standard</string>
   <key>StandardOutPath</key>
   <string>$LOG_DIR/stdout.log</string>
   <key>StandardErrorPath</key>
