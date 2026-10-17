@@ -32,8 +32,13 @@ public sealed class MacDisplayWatcher : IDisplaySnapshotProvider, ILeadershipEli
     private Task? _loop;
     private string? _lastKey;
 
+    // Dell の入力が切り替わる途中は数秒間判定できない。その間にリーダーを譲ると切替のたびに役が移るため、
+    // 判定不能がこの時間続いたときだけ務められないとみなす。
+    private static readonly TimeSpan IneligibleAfter = TimeSpan.FromSeconds(10);
+
     // 起動直後は判定前なので務められる扱いにし、最初のポーリングで確定させる。
     private volatile bool _eligible = true;
+    private DateTimeOffset? _unknownSince;
 
     public MacDisplayWatcher(
         M1ddcClient m1ddc,
@@ -95,7 +100,16 @@ public sealed class MacDisplayWatcher : IDisplaySnapshotProvider, ILeadershipEli
             !string.IsNullOrWhiteSpace(_options.PreferredMonitorName) &&
             d.Name.Contains(_options.PreferredMonitorName, StringComparison.OrdinalIgnoreCase));
         var source = preferred is null ? PreferredInputSource.Unknown : _probe.Probe();
-        _eligible = source != PreferredInputSource.Unknown;
+        if (source != PreferredInputSource.Unknown)
+        {
+            _unknownSince = null;
+            _eligible = true;
+        }
+        else
+        {
+            _unknownSince ??= DateTimeOffset.UtcNow;
+            _eligible = DateTimeOffset.UtcNow - _unknownSince.Value < IneligibleAfter;
+        }
 
         var key = string.Join('|', displays.Select(d => d.Uuid)) + "#" + source;
         if (key == _lastKey)
