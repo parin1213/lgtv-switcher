@@ -49,6 +49,8 @@ public sealed class PeerCoordinator : BackgroundService, ILeadershipState
 
     private bool Enabled => !string.IsNullOrWhiteSpace(_options.PeerHost);
 
+    public event EventHandler? LeadershipAcquired;
+
     public bool IsLeader
     {
         get
@@ -124,6 +126,7 @@ public sealed class PeerCoordinator : BackgroundService, ILeadershipState
 
     private void Evaluate()
     {
+        var acquired = false;
         lock (_gate)
         {
             var timeout = TimeSpan.FromSeconds(Math.Max(1, _options.PeerTimeoutSeconds));
@@ -153,6 +156,12 @@ public sealed class PeerCoordinator : BackgroundService, ILeadershipState
                 peer?.Eligible.ToString() ?? "-");
             _role = next;
             _leaderSince = next == PeerRole.Leader ? DateTimeOffset.UtcNow : null;
+            acquired = next == PeerRole.Leader;
+        }
+
+        if (acquired)
+        {
+            LeadershipAcquired?.Invoke(this, EventArgs.Empty);
         }
     }
 

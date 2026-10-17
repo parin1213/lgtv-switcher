@@ -4,12 +4,25 @@ namespace LGTVSwitcher.Core.Coordination;
 public interface ILeadershipState
 {
     bool IsLeader { get; }
+
+    /// <summary>
+    /// リーダーになったときに発火する。待機中に起きた表示の変化は同期を見送っているため、
+    /// 受け取った側はすぐ同期し直す（定期同期を待つと、引き継ぎから切替まで最大で同期間隔ぶん遅れる）。
+    /// </summary>
+    event EventHandler? LeadershipAcquired;
 }
 
 /// <summary>相手デーモンを設定していない（単独で動かす）ときの既定。常にリーダー。</summary>
 public sealed class AlwaysLeader : ILeadershipState
 {
     public bool IsLeader => true;
+
+    // 常にリーダーなので、新たにリーダーになることは無い。
+    public event EventHandler? LeadershipAcquired
+    {
+        add { }
+        remove { }
+    }
 }
 
 /// <summary>

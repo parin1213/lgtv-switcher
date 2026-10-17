@@ -913,9 +913,52 @@ public class DisplaySyncWorkerTests
         await worker.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task BecomingLeader_ShouldSyncImmediatelyWithoutWaitingForInterval()
+    {
+        // 待機中に表示が変わっても同期は見送られる。リーダーを引き継いだ瞬間に、定期同期を待たずに切り替える。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_2" };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.OtherSource };
+        var leadership = new FakeLeadership(false);
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_2",
+            FallbackInputId = "HDMI_4",
+            PreferredMonitorName = "TEST",
+            SyncIntervalSeconds = 0,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, leadership, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: false));
+
+        Assert.False(await WaitForSwitchAsync(controller, _ => true, timeoutMs: 1200), "待機中は切り替えてはならない。");
+
+        leadership.Acquire();
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "リーダーを引き継いだら、すぐ HDMI_4 へ切り替えるべき。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
     private sealed class FakeLeadership(bool isLeader) : LGTVSwitcher.Core.Coordination.ILeadershipState
     {
-        public bool IsLeader => isLeader;
+        private volatile bool _isLeader = isLeader;
+
+        public bool IsLeader => _isLeader;
+
+        public event EventHandler? LeadershipAcquired;
+
+        public void Acquire()
+        {
+            _isLeader = true;
+            LeadershipAcquired?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private sealed class FakeInputSourceProbe : IPreferredInputSourceProbe

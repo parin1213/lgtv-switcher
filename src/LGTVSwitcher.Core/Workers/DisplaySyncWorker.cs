@@ -81,16 +81,48 @@ public sealed class DisplaySyncWorker : BackgroundService
             channel.Writer.TryWrite(snapshot);
         });
 
-        await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
+        // リーダーになったら、待機中に見送った同期をすぐやり直す。連続で届いても 1 回にまとめる。
+        var leadershipKick = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
+        void OnLeadershipAcquired(object? sender, EventArgs e) => leadershipKick.Writer.TryWrite(true);
+        _leadership.LeadershipAcquired += OnLeadershipAcquired;
 
-        var periodicTask = _syncInterval.HasValue
-            ? RunPeriodicSyncAsync(stoppingToken)
-            : Task.CompletedTask;
+        try
+        {
+            await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
 
-        await RunDebounceLoopAsync(channel.Reader, stoppingToken).ConfigureAwait(false);
-        channel.Writer.TryComplete();
+            var periodicTask = _syncInterval.HasValue
+                ? RunPeriodicSyncAsync(stoppingToken)
+                : Task.CompletedTask;
+            var leadershipTask = RunLeadershipSyncAsync(leadershipKick.Reader, stoppingToken);
 
-        await periodicTask.ConfigureAwait(false);
+            await RunDebounceLoopAsync(channel.Reader, stoppingToken).ConfigureAwait(false);
+            channel.Writer.TryComplete();
+            leadershipKick.Writer.TryComplete();
+
+            await Task.WhenAll(periodicTask, leadershipTask).ConfigureAwait(false);
+        }
+        finally
+        {
+            _leadership.LeadershipAcquired -= OnLeadershipAcquired;
+        }
+    }
+
+    private async Task RunLeadershipSyncAsync(ChannelReader<bool> reader, CancellationToken ct)
+    {
+        try
+        {
+            while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (reader.TryRead(out _))
+                {
+                }
+
+                await SyncLatestAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
     }
 
     private async Task RunDebounceLoopAsync(ChannelReader<DisplaySnapshot> reader, CancellationToken ct)
@@ -128,18 +160,24 @@ public sealed class DisplaySyncWorker : BackgroundService
         using var timer = new PeriodicTimer(_syncInterval!.Value);
         while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
         {
-            var snapshot = _latestSnapshot;
-            if (snapshot is null || !IsEligibleSnapshot(snapshot)) continue;
-
-            var refreshed = new DisplaySnapshot(
-                DateTimeOffset.UtcNow,
-                snapshot.Monitors,
-                snapshot.PreferredMonitor,
-                snapshot.PreferredMonitorOnline,
-                snapshot.PreferredMonitorEdidKey);
-
-            await TrySyncAsync(refreshed, ct).ConfigureAwait(false);
+            await SyncLatestAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    // 直近のスナップショットを今の時刻で取り直して同期する（表示の変化を伴わない再評価）。
+    private async Task SyncLatestAsync(CancellationToken ct)
+    {
+        var snapshot = _latestSnapshot;
+        if (snapshot is null || !IsEligibleSnapshot(snapshot)) return;
+
+        var refreshed = new DisplaySnapshot(
+            DateTimeOffset.UtcNow,
+            snapshot.Monitors,
+            snapshot.PreferredMonitor,
+            snapshot.PreferredMonitorOnline,
+            snapshot.PreferredMonitorEdidKey);
+
+        await TrySyncAsync(refreshed, ct).ConfigureAwait(false);
     }
 
     private async Task TrySyncAsync(DisplaySnapshot snapshot, CancellationToken ct)
