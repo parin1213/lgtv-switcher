@@ -115,6 +115,39 @@ gsudo .\scripts\sudo-install.bat
 gsudo .\scripts\sudo-uninstall.bat
 ```
 
+## 🍎 macOS 版（Mac 側でも常駐させる）
+
+Windows 版と同じ判定を Mac 側でも行い、どちらの PC が眠っていても TV が追従するようにします。Core（webOS クライアント・同期ループ・タイムアウト）は共通で、Mac 固有部分は DDC の読み取りだけです。
+
+* Apple Silicon の DDC は [m1ddc](https://github.com/waydabber/m1ddc) で読みます（`brew install m1ddc`）。
+* 判定は Windows 版の裏返しです。U2725QE が USB-C（Mac）を映していれば `TargetInputId`（Mac の入力 `HDMI_2`）、DisplayPort（Windows）なら `FallbackInputId`（`HDMI_4`）へ切り替えます。
+* `SkipSyncWhenInputSourceUnknown: true` にしてあり、DDC で判定できないときは TV に触れません。
+* Mac からの DDC 応答は約 3% の割合で化けるため、同じ値が 3 回続き、かつ 2 回の判定で一致したときだけ入力の変化とみなします。
+
+### Windows と Mac の連携（どちらが TV を切り替えるか）
+
+両方のデーモンが TV を切り替えると、片方の読み違い 1 回で TV が交互に入れ替わり続けます。そこで `PeerHost` に相手の IP を設定し、TCP `47810` で状態を交換して、**TV を切り替えるのは片方（リーダー）だけ**にしています。
+
+* 先に起動していた方がリーダーを持ち続けます。後から起動した方は待機します。
+* リーダーと 10 秒（`PeerTimeoutSeconds`）連絡が取れなければ、待機側が引き継ぎます。
+* Dell が外れて入力を判定できない側（Dell から外した MacBook 等）は、相手にリーダーを譲ります。
+* Windows 側は `install.ps1` がファイアウォールの受信許可（プライベート ネットワーク）を追加します。
+* `PeerHost` は IP で書いています。DHCP で IP が変わると連携が切れ、両方が単独のリーダーとして動きます。ルーターで固定割り当てにしてください。
+
+```bash
+# 入力ソースの確認（Mac を映していれば ThisPc）
+dotnet run --project src/LgtvSwitcher.MacOS -- probe-input
+
+# 初回ペアリング（TV に出る確認をリモコンで「許可」）と現在入力の確認
+dotnet run --project src/LgtvSwitcher.MacOS -- tv-input
+
+# LaunchAgent としてログイン中は常駐させる / 解除する
+./scripts/install-macos.sh
+./scripts/uninstall-macos.sh
+```
+
+ログは `~/Library/Logs/LgtvSwitcher/`、client-key は `~/Library/Application Support/LgtvSwitcher/state.json` に保存されます。
+
 ## 🧪 動作確認・デバッグ
 
 設定の確認や、モニター認識の挙動をテストしたい場合は `LGTVSwitcher.Daemon.Windows` をコンソールアプリとして実行します。

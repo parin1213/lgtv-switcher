@@ -78,6 +78,11 @@ try {
     Write-Host "発行物をコピーしています..." -ForegroundColor Cyan
     Get-ChildItem $publishDir | Copy-Item -Destination $installDir -Recurse -Force
 
+    # Mac 側デーモンと TV を切り替える役を決めるため、状態交換用のポートの受信を許可する。
+    $peerRuleName = "LGTVSwitcher Peer"
+    Remove-NetFirewallRule -DisplayName $peerRuleName -ErrorAction SilentlyContinue
+    New-NetFirewallRule -DisplayName $peerRuleName -Direction Inbound -Protocol TCP -LocalPort 47810 -Profile Private -Action Allow | Out-Null
+
     # ---------------------------------------------------------
     # 3. タスクスケジューラへの登録
     # ---------------------------------------------------------

@@ -1,3 +1,4 @@
+using LGTVSwitcher.Core.Coordination;
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
@@ -53,10 +54,15 @@ internal static class MacDaemonHost
         services.AddSingleton<ILgTvSession>(sp => sp.GetRequiredService<LgTvSession>());
         services.AddSingleton<ILgTvController, LgTvController>();
 
-        services.AddSingleton<IDisplaySnapshotProvider, MacDisplayWatcher>();
+        services.AddSingleton<M1ddcClient>();
+        services.AddSingleton<IPreferredInputSourceProbe, MacDdcInputSourceProbe>();
+        services.AddSingleton<MacDisplayWatcher>();
+        services.AddSingleton<IDisplaySnapshotProvider>(sp => sp.GetRequiredService<MacDisplayWatcher>());
+        services.AddSingleton<ILeadershipEligibility>(sp => sp.GetRequiredService<MacDisplayWatcher>());
 
-        // macOS は DDC 入力ソース判定を未実装のため、常に Unknown を返し列挙ベース判定へフォールバックする。
-        services.AddSingleton<IPreferredInputSourceProbe, NullPreferredInputSourceProbe>();
+        services.AddSingleton<PeerCoordinator>();
+        services.AddSingleton<ILeadershipState>(sp => sp.GetRequiredService<PeerCoordinator>());
+        services.AddHostedService(sp => sp.GetRequiredService<PeerCoordinator>());
 
         services.AddHostedService<DisplaySyncWorker>();
     }

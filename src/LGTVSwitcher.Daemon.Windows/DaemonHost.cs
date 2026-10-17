@@ -1,3 +1,4 @@
+using LGTVSwitcher.Core.Coordination;
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.Workers;
@@ -60,6 +61,11 @@ internal static class DaemonHost
         services.AddSingleton<WindowsMonitorDetector>();
         services.AddSingleton<IDisplaySnapshotProvider, WindowsDisplaySnapshotProvider>();
         services.AddSingleton<IPreferredInputSourceProbe, DdcInputSourceProbe>();
+
+        services.AddSingleton<ILeadershipEligibility, AlwaysEligible>();
+        services.AddSingleton<PeerCoordinator>();
+        services.AddSingleton<ILeadershipState>(sp => sp.GetRequiredService<PeerCoordinator>());
+        services.AddHostedService(sp => sp.GetRequiredService<PeerCoordinator>());
 
         services.AddHostedService<DisplaySyncWorker>();
     }

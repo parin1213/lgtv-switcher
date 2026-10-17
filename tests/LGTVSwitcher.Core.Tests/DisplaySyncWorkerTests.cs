@@ -831,6 +831,93 @@ public class DisplaySyncWorkerTests
         await worker.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task UnknownInputSource_WithSkipEnabled_ShouldNotSwitch()
+    {
+        // Windows と Mac の両方で常駐する構成。列挙上は online でも、どちらを映しているか不明なら TV に触れない。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.Unknown };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_2",
+            FallbackInputId = "HDMI_4",
+            PreferredMonitorName = "TEST",
+            SkipSyncWhenInputSourceUnknown = true,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, _ => true, timeoutMs: 1200);
+        Assert.False(switched, "入力ソース不明かつ SkipSyncWhenInputSourceUnknown のときは切り替えてはならない。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ThisPcInput_WithSkipEnabled_ShouldStillSwitch()
+    {
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.ThisPc };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_2",
+            FallbackInputId = "HDMI_4",
+            PreferredMonitorName = "TEST",
+            SkipSyncWhenInputSourceUnknown = true,
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_2");
+        Assert.True(switched, "入力ソースが ThisPc なら HDMI_2 へ切り替えるべき。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task NotLeader_ShouldNotSwitch()
+    {
+        // もう一方の PC のデーモンがリーダーの間は、判定が切替を示しても TV に触れない。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_4" };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.ThisPc };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_2",
+            FallbackInputId = "HDMI_4",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, new FakeLeadership(false), options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true));
+
+        var switched = await WaitForSwitchAsync(controller, _ => true, timeoutMs: 1200);
+        Assert.False(switched, "リーダーでないときは切り替えてはならない。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    private sealed class FakeLeadership(bool isLeader) : LGTVSwitcher.Core.Coordination.ILeadershipState
+    {
+        public bool IsLeader => isLeader;
+    }
+
     private sealed class FakeInputSourceProbe : IPreferredInputSourceProbe
     {
         public PreferredInputSource Result { get; set; } = PreferredInputSource.Unknown;

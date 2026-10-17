@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Threading.Channels;
 
+using LGTVSwitcher.Core.Coordination;
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.LgWebOs;
@@ -21,6 +22,7 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly IDisplaySnapshotProvider _snapshotProvider;
     private readonly ILgTvController _lgTvController;
     private readonly IPreferredInputSourceProbe _inputSourceProbe;
+    private readonly ILeadershipState _leadership;
     private readonly ILogger<DisplaySyncWorker> _logger;
     private readonly LgTvSwitcherOptions _options;
     private readonly string[] _allowedCurrentInputIds;
@@ -37,10 +39,22 @@ public sealed class DisplaySyncWorker : BackgroundService
         IPreferredInputSourceProbe inputSourceProbe,
         IOptions<LgTvSwitcherOptions> options,
         ILogger<DisplaySyncWorker> logger)
+        : this(snapshotProvider, lgTvController, inputSourceProbe, new AlwaysLeader(), options, logger)
+    {
+    }
+
+    public DisplaySyncWorker(
+        IDisplaySnapshotProvider snapshotProvider,
+        ILgTvController lgTvController,
+        IPreferredInputSourceProbe inputSourceProbe,
+        ILeadershipState leadership,
+        IOptions<LgTvSwitcherOptions> options,
+        ILogger<DisplaySyncWorker> logger)
     {
         _snapshotProvider = snapshotProvider;
         _lgTvController = lgTvController;
         _inputSourceProbe = inputSourceProbe;
+        _leadership = leadership;
         _logger = logger;
         _options = options.Value;
         _allowedCurrentInputIds = _options.AllowedCurrentInputIds?
@@ -193,6 +207,13 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private async Task SyncLgTvAsync(DisplaySnapshot snapshot, CancellationToken cancellationToken)
     {
+        // もう一方の PC のデーモンがリーダーの間は TV に触れない（両方が切り替えると奪い合いになる）。
+        if (!_leadership.IsLeader)
+        {
+            _logger.LogDebug("Peer daemon is the leader; skipping LG TV sync.");
+            return;
+        }
+
         var age = DateTimeOffset.UtcNow - snapshot.Timestamp;
         if (age > TimeSpan.FromSeconds(5))
         {
@@ -203,6 +224,12 @@ public sealed class DisplaySyncWorker : BackgroundService
         // 優先モニタが「今このPCの入力を映しているか」を DDC/CI で都度確認する。
         // マルチ入力モニタは表示を別PC(Mac)へ移してもリンクを維持するため、列挙有無だけでは判別できない。
         var showing = _inputSourceProbe.Probe();
+        if (showing == PreferredInputSource.Unknown && _options.SkipSyncWhenInputSourceUnknown)
+        {
+            _logger.LogDebug("Preferred monitor input source is unknown; skipping LG TV sync.");
+            return;
+        }
+
         var effectiveOnline = showing switch
         {
             PreferredInputSource.ThisPc => true,

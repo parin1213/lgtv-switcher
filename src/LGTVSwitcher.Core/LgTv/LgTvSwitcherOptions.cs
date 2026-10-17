@@ -70,4 +70,27 @@ public sealed class LgTvSwitcherOptions
     /// 既定は "DisplayPort"。空にすると DDC 判定を使わず従来の列挙ベースにフォールバックする。
     /// </summary>
     public string[]? PreferredMonitorThisPcInputSources { get; set; } = new[] { "DisplayPort" };
+
+    /// <summary>
+    /// 入力ソースのプローブが判定不能（<see cref="Display.PreferredInputSource.Unknown"/>）のとき、
+    /// 列挙ベースへフォールバックせず同期を見送るか。既定は false（列挙ベースへフォールバック）。
+    /// Windows と Mac の両方で常駐させる構成では true にする。モニタを列挙できても「どちらを映しているか」
+    /// 分からない状態で切り替えると、もう一方のデーモンと TV を奪い合うため。
+    /// </summary>
+    public bool SkipSyncWhenInputSourceUnknown { get; set; }
+
+    /// <summary>
+    /// もう一方の PC で動くデーモンのホスト名または IP。空なら単独で動き、常に TV を切り替える。
+    /// 設定すると、先に起動していた方だけが TV を切り替え、もう一方はそれが落ちるまで待機する。
+    /// </summary>
+    public string? PeerHost { get; set; }
+
+    /// <summary>デーモン同士が状態を交換する TCP ポート。両方で同じ値にする。</summary>
+    public int PeerPort { get; set; } = 47810;
+
+    /// <summary>相手へ状態を問い合わせる間隔（秒）。</summary>
+    public int PeerHeartbeatSeconds { get; set; } = 3;
+
+    /// <summary>この秒数のあいだ相手と連絡が取れなければ、相手は落ちたとみなしてリーダーを引き継ぐ。</summary>
+    public int PeerTimeoutSeconds { get; set; } = 10;
 }
