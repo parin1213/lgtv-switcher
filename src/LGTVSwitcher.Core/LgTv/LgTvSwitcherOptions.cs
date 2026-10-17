@@ -91,12 +91,13 @@ public sealed class LgTvSwitcherOptions
     public bool SkipSyncWhenInputSourceUnknown { get; set; }
 
     /// <summary>
-    /// もう一方の PC で動くデーモンのホスト名または IP。空なら単独で動き、常に TV を切り替える。
-    /// 設定すると、先に起動していた方だけが TV を切り替え、もう一方はそれが落ちるまで待機する。
+    /// もう一方の PC で動くデーモンと連携するか。false なら単独で動き、常に TV を切り替える。
+    /// true にすると、先に起動していた方だけが TV を切り替え、もう一方はそれが落ちるまで待機する。
+    /// 相手は同じ LAN へのブロードキャストで見つけるため、IP を設定する必要は無い。
     /// </summary>
-    public string? PeerHost { get; set; }
+    public bool EnablePeerCoordination { get; set; }
 
-    /// <summary>デーモン同士が状態を交換する TCP ポート。両方で同じ値にする。</summary>
+    /// <summary>デーモン同士が相手を見つけ（UDP ブロードキャスト）、状態を交換する（TCP）ポート。両方で同じ値にする。</summary>
     public int PeerPort { get; set; } = 47810;
 
     /// <summary>相手へ状態を問い合わせる間隔（秒）。</summary>

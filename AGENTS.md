@@ -36,7 +36,7 @@
 - **WindowsDisplaySnapshotProvider のメッセージループ**:
   - 非 UI の STA メッセージループを持つ Hidden Window を使用する。Windows の仕様上必須であり、非同期化・スレッド切替で破壊しないこと。
   - `DisplayDetection/` 内で `Task.Run` や `ConfigureAwait` の軽率な使用は禁止。
-- **Win/Mac の連携（リーダー選出）**: `PeerHost` を設定すると `PeerCoordinator` が TCP（既定 47810）で相手デーモンと状態を交換し、TV を切り替えるのはリーダーだけにする（`DisplaySyncWorker` は `ILeadershipState.IsLeader` が false なら同期を見送る）。規則は `LeaderElection.Decide`: 連絡不能なら自分がリーダー／判定できない側（`ILeadershipEligibility`）は譲る／先にリーダーになった・先に起動した方が残る。**両方が切り替える構成に戻さないこと**——Mac の DDC 応答は化けるため、両者が切り替えると TV が交互に入れ替わり続ける。
+- **Win/Mac の連携（リーダー選出）**: `EnablePeerCoordination` を true にすると `PeerCoordinator` が相手デーモンを UDP ブロードキャスト（既定 47810）と TCP の問い合わせ元で見つけ、TCP（同ポート）で状態を交換し、TV を切り替えるのはリーダーだけにする（`DisplaySyncWorker` は `ILeadershipState.IsLeader` が false なら同期を見送る）。規則は `LeaderElection.Decide`: 連絡不能なら自分がリーダー／判定できない側（`ILeadershipEligibility`）は譲る／先にリーダーになった・先に起動した方が残る。相手の IP は設定に書かない（Mac は Dell の表示先で有線/Wi-Fi の IP が変わる）。**両方が切り替える構成に戻さないこと**——Mac の DDC 応答は化けるため、両者が切り替えると TV が交互に入れ替わり続ける。
 - **ログ**: 状態遷移・実際の入力切替のみ Information。定常反復（`Already connected`/`already set; no switch`/SSDP の discover start・summary・final result・`No input mapping…skipping`）は Debug に留めてログ肥大を防ぐ。WebSocket 例外は Warning 1 行、詳細は Debug。**TV 到達不可（ネットワーク断・未検出/オフライン=`LgTvRegistrationException`）は正常運用でも起きるため、遷移時に一度だけ Warning、以降は Debug**（`_tvUnavailableLogged` で管理。復帰時に Information）。SSDP 探索は WSL/Tailscale 等の仮想 NIC を `SsdpInterfaceFilter` で除外する。
 
 ## テスト方針
