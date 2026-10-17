@@ -69,7 +69,18 @@ public sealed class LgTvSwitcherOptions
     /// 別モニタで値が異なる場合は生の値 "0x1B" / "27" も指定可。
     /// 既定は "DisplayPort"。空にすると DDC 判定を使わず従来の列挙ベースにフォールバックする。
     /// </summary>
-    public string[]? PreferredMonitorThisPcInputSources { get; set; } = new[] { "DisplayPort" };
+    /// <remarks>
+    /// 既定値はプロパティ初期値ではなく <see cref="ResolveThisPcInputSources"/> で補う。
+    /// 設定の配列はプロパティ初期値に追記されるため、初期値に "DisplayPort" を入れると
+    /// "USB-C" と書いた Mac でも DisplayPort を「この PC」とみなしてしまう。
+    /// </remarks>
+    public string[]? PreferredMonitorThisPcInputSources { get; set; }
+
+    /// <summary>
+    /// <see cref="PreferredMonitorThisPcInputSources"/> を実際に使う値へ解決する。未設定なら "DisplayPort"。
+    /// </summary>
+    public string[] ResolveThisPcInputSources()
+        => PreferredMonitorThisPcInputSources ?? ["DisplayPort"];
 
     /// <summary>
     /// 入力ソースのプローブが判定不能（<see cref="Display.PreferredInputSource.Unknown"/>）のとき、

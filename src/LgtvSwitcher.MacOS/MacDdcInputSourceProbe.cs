@@ -38,7 +38,7 @@ public sealed class MacDdcInputSourceProbe : IPreferredInputSourceProbe
         _m1ddc = m1ddc;
         _options = options.Value;
         _logger = logger;
-        _thisPcCodes = (_options.PreferredMonitorThisPcInputSources ?? [])
+        _thisPcCodes = _options.ResolveThisPcInputSources()
             .Select(name => MonitorInputSourceCatalog.TryResolve(name, out var code) ? code & 0xFF : -1)
             .Where(code => code >= 0)
             .ToArray();
