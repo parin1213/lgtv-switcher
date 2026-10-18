@@ -30,6 +30,7 @@ try {
         Write-Host "タスクを停止・削除しています..." -ForegroundColor Cyan
         Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        Remove-NetFirewallRule -DisplayName "LGTVSwitcher Peer" -ErrorAction SilentlyContinue
     } else {
         Write-Host "タスクは見つかりませんでした。" -ForegroundColor Gray
     }

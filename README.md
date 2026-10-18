@@ -115,6 +115,42 @@ gsudo .\scripts\sudo-install.bat
 gsudo .\scripts\sudo-uninstall.bat
 ```
 
+## 🍎 macOS 版（Mac 側でも常駐させる）
+
+Windows 版と同じ判定を Mac 側でも行い、どちらの PC が眠っていても TV が追従するようにします。Core（webOS クライアント・同期ループ・タイムアウト）は共通で、Mac 固有部分は DDC の読み取りだけです。
+
+* Apple Silicon の DDC は [m1ddc](https://github.com/waydabber/m1ddc) で読みます（`brew install m1ddc`）。
+* 判定は Windows 版の裏返しです。U2725QE が USB-C（Mac）を映していれば `TargetInputId`（Mac の入力 `HDMI_2`）、DisplayPort（Windows）なら `FallbackInputId`（`HDMI_4`）へ切り替えます。
+* `SkipSyncWhenInputSourceUnknown: true` にしてあり、DDC で判定できないときは TV に触れません。
+* Mac からの DDC 応答は化けます（Mac 表示中は約 3%、Windows 表示中は約 25%）。最大 7 回読んで同じ値が 4 回出たら確定し、さらに 2 回の判定で一致したときだけ入力の変化とみなします。
+* U2725QE の USB-C ハブ経由の有線 LAN は、Dell を Windows 表示にすると Windows 側へ移ります。そのあいだ Mac は Wi-Fi だけになり、SSDP も `lgwebostv.local` も TV に届かないため、最後に接続できた TV の IP（`state.json` の `lastKnownTvAddress`）へ直接つなぎます。
+* LaunchAgent は `ProcessType=Standard` で動かします。`Background` だと macOS がタイマーと CPU を絞り、判定と切替が数秒ずつ遅れます。
+
+### Windows と Mac の連携（どちらが TV を切り替えるか）
+
+両方のデーモンが TV を切り替えると、片方の読み違い 1 回で TV が交互に入れ替わり続けます。そこで `EnablePeerCoordination: true` にすると、両方のデーモンが同じ LAN で相手を見つけて状態を交換し、**TV を切り替えるのは片方（リーダー）だけ**にします。
+
+* 先に起動していた方がリーダーを持ち続けます。後から起動した方は待機します。
+* リーダーと 10 秒（`PeerTimeoutSeconds`）連絡が取れなければ、待機側が引き継ぎます。
+* Dell が外れて入力を判定できない側（Dell から外した MacBook 等）は、相手にリーダーを譲ります。入力の切替中に数秒判定できないだけでは譲りません（10 秒続いたら譲る）。
+* リーダーを引き継いだ側は、定期同期を待たずにすぐ同期し直します。
+* 相手の IP は設定しません。各デーモンが 3 秒ごとに UDP `47810` へブロードキャストし、届いた送信元（と TCP の問い合わせ元）を相手とみなして、TCP `47810` で状態を交換します。Mac は Dell の表示先によって有線と Wi-Fi で IP が変わるため、固定値では追従できません。
+* Windows 側は `install.ps1` がファイアウォールの受信許可（TCP/UDP 47810、プライベート ネットワーク）を追加します。
+
+```bash
+# 入力ソースの確認（Mac を映していれば ThisPc）
+dotnet run --project src/LgtvSwitcher.MacOS -- probe-input
+
+# 初回ペアリング（TV に出る確認をリモコンで「許可」）と現在入力の確認
+dotnet run --project src/LgtvSwitcher.MacOS -- tv-input
+
+# LaunchAgent としてログイン中は常駐させる / 解除する
+./scripts/install-macos.sh
+./scripts/uninstall-macos.sh
+```
+
+ログは `~/Library/Logs/LgtvSwitcher/`、client-key は `~/Library/Application Support/LgtvSwitcher/state.json` に保存されます。
+
 ## 🧪 動作確認・デバッグ
 
 設定の確認や、モニター認識の挙動をテストしたい場合は `LGTVSwitcher.Daemon.Windows` をコンソールアプリとして実行します。

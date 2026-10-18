@@ -67,6 +67,51 @@ public sealed class LgTvSessionTests
         Assert.Equal("configured-tv.local", transport.ConnectUris[0].Host);
     }
 
+    [Fact]
+    public async Task EnsureConnectedAsync_HostUnresolvable_UsesLastKnownAddress()
+    {
+        // Mac が Wi-Fi だけになると SSDP も mDNS も届かない。最後に接続できた IP へ直接つなぐ。
+        var transport = new FakeTransport();
+        transport.Enqueue("""{"type":"registered","payload":{"client-key":"key-1"}}""");
+        var options = Options.Create(new LgTvSwitcherOptions { TvHost = "lgtv.invalid" });
+        var store = new FakeClientKeyStore(new LgTvPersistedState("key-1", null, "192.168.1.145"));
+        var session = CreateSession(transport, new FakeDiscovery(), store, options);
+
+        await session.EnsureConnectedAsync(CancellationToken.None);
+
+        Assert.Equal("192.168.1.145", transport.ConnectUris[0].Host);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectedByIp_PersistsLastKnownAddress()
+    {
+        var transport = new FakeTransport();
+        transport.Enqueue("""{"type":"registered","payload":{"client-key":"key-1"}}""");
+        var discovery = new FakeDiscovery(
+            new LgTvDiscoveryResult("192.168.0.20", "http://192.168.0.20:3001/desc.xml", "uuid:tv", "LG", "st"));
+        var store = new FakeClientKeyStore();
+        var session = CreateSession(transport, discovery, store, Options.Create(new LgTvSwitcherOptions()));
+
+        await session.EnsureConnectedAsync(CancellationToken.None);
+
+        Assert.Equal("192.168.0.20", store.PersistedLastKnownTvAddress);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_TvHostIsIpLiteral_ConnectsWithoutLookup()
+    {
+        var transport = new FakeTransport();
+        transport.Enqueue("""{"type":"registered","payload":{"client-key":"key-1"}}""");
+        var store = new FakeClientKeyStore();
+        var options = Options.Create(new LgTvSwitcherOptions { TvHost = "192.168.1.145" });
+        var session = CreateSession(transport, new FakeDiscovery(), store, options);
+
+        await session.EnsureConnectedAsync(CancellationToken.None);
+
+        Assert.Equal("192.168.1.145", transport.ConnectUris[0].Host);
+        Assert.Equal("192.168.1.145", store.PersistedLastKnownTvAddress);
+    }
+
     // TV がスタンバイへ入ると TLS ハンドシェイクが返らないことがある。
     // 上限が無いと接続ロックを握ったまま同期ループ全体が止まるため、必ず打ち切る。
     [Fact]
@@ -292,6 +337,14 @@ public sealed class LgTvSessionTests
         public Task PersistPreferredTvUsnAsync(string preferredTvUsn, CancellationToken cancellationToken)
         {
             PersistedPreferredTvUsn = preferredTvUsn;
+            return Task.CompletedTask;
+        }
+
+        public string? PersistedLastKnownTvAddress { get; private set; }
+
+        public Task PersistLastKnownTvAddressAsync(string address, CancellationToken cancellationToken)
+        {
+            PersistedLastKnownTvAddress = address;
             return Task.CompletedTask;
         }
     }

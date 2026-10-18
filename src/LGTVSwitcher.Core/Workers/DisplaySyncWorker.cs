@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Threading.Channels;
 
+using LGTVSwitcher.Core.Coordination;
 using LGTVSwitcher.Core.Display;
 using LGTVSwitcher.Core.LgTv;
 using LGTVSwitcher.Core.LgWebOs;
@@ -21,6 +22,7 @@ public sealed class DisplaySyncWorker : BackgroundService
     private readonly IDisplaySnapshotProvider _snapshotProvider;
     private readonly ILgTvController _lgTvController;
     private readonly IPreferredInputSourceProbe _inputSourceProbe;
+    private readonly ILeadershipState _leadership;
     private readonly ILogger<DisplaySyncWorker> _logger;
     private readonly LgTvSwitcherOptions _options;
     private readonly string[] _allowedCurrentInputIds;
@@ -37,10 +39,22 @@ public sealed class DisplaySyncWorker : BackgroundService
         IPreferredInputSourceProbe inputSourceProbe,
         IOptions<LgTvSwitcherOptions> options,
         ILogger<DisplaySyncWorker> logger)
+        : this(snapshotProvider, lgTvController, inputSourceProbe, new AlwaysLeader(), options, logger)
+    {
+    }
+
+    public DisplaySyncWorker(
+        IDisplaySnapshotProvider snapshotProvider,
+        ILgTvController lgTvController,
+        IPreferredInputSourceProbe inputSourceProbe,
+        ILeadershipState leadership,
+        IOptions<LgTvSwitcherOptions> options,
+        ILogger<DisplaySyncWorker> logger)
     {
         _snapshotProvider = snapshotProvider;
         _lgTvController = lgTvController;
         _inputSourceProbe = inputSourceProbe;
+        _leadership = leadership;
         _logger = logger;
         _options = options.Value;
         _allowedCurrentInputIds = _options.AllowedCurrentInputIds?
@@ -67,16 +81,48 @@ public sealed class DisplaySyncWorker : BackgroundService
             channel.Writer.TryWrite(snapshot);
         });
 
-        await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
+        // リーダーになったら、待機中に見送った同期をすぐやり直す。連続で届いても 1 回にまとめる。
+        var leadershipKick = Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
+        void OnLeadershipAcquired(object? sender, EventArgs e) => leadershipKick.Writer.TryWrite(true);
+        _leadership.LeadershipAcquired += OnLeadershipAcquired;
 
-        var periodicTask = _syncInterval.HasValue
-            ? RunPeriodicSyncAsync(stoppingToken)
-            : Task.CompletedTask;
+        try
+        {
+            await _snapshotProvider.StartAsync(stoppingToken).ConfigureAwait(false);
 
-        await RunDebounceLoopAsync(channel.Reader, stoppingToken).ConfigureAwait(false);
-        channel.Writer.TryComplete();
+            var periodicTask = _syncInterval.HasValue
+                ? RunPeriodicSyncAsync(stoppingToken)
+                : Task.CompletedTask;
+            var leadershipTask = RunLeadershipSyncAsync(leadershipKick.Reader, stoppingToken);
 
-        await periodicTask.ConfigureAwait(false);
+            await RunDebounceLoopAsync(channel.Reader, stoppingToken).ConfigureAwait(false);
+            channel.Writer.TryComplete();
+            leadershipKick.Writer.TryComplete();
+
+            await Task.WhenAll(periodicTask, leadershipTask).ConfigureAwait(false);
+        }
+        finally
+        {
+            _leadership.LeadershipAcquired -= OnLeadershipAcquired;
+        }
+    }
+
+    private async Task RunLeadershipSyncAsync(ChannelReader<bool> reader, CancellationToken ct)
+    {
+        try
+        {
+            while (await reader.WaitToReadAsync(ct).ConfigureAwait(false))
+            {
+                while (reader.TryRead(out _))
+                {
+                }
+
+                await SyncLatestAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
     }
 
     private async Task RunDebounceLoopAsync(ChannelReader<DisplaySnapshot> reader, CancellationToken ct)
@@ -114,18 +160,24 @@ public sealed class DisplaySyncWorker : BackgroundService
         using var timer = new PeriodicTimer(_syncInterval!.Value);
         while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
         {
-            var snapshot = _latestSnapshot;
-            if (snapshot is null || !IsEligibleSnapshot(snapshot)) continue;
-
-            var refreshed = new DisplaySnapshot(
-                DateTimeOffset.UtcNow,
-                snapshot.Monitors,
-                snapshot.PreferredMonitor,
-                snapshot.PreferredMonitorOnline,
-                snapshot.PreferredMonitorEdidKey);
-
-            await TrySyncAsync(refreshed, ct).ConfigureAwait(false);
+            await SyncLatestAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    // 直近のスナップショットを今の時刻で取り直して同期する（表示の変化を伴わない再評価）。
+    private async Task SyncLatestAsync(CancellationToken ct)
+    {
+        var snapshot = _latestSnapshot;
+        if (snapshot is null || !IsEligibleSnapshot(snapshot)) return;
+
+        var refreshed = new DisplaySnapshot(
+            DateTimeOffset.UtcNow,
+            snapshot.Monitors,
+            snapshot.PreferredMonitor,
+            snapshot.PreferredMonitorOnline,
+            snapshot.PreferredMonitorEdidKey);
+
+        await TrySyncAsync(refreshed, ct).ConfigureAwait(false);
     }
 
     private async Task TrySyncAsync(DisplaySnapshot snapshot, CancellationToken ct)
@@ -193,6 +245,13 @@ public sealed class DisplaySyncWorker : BackgroundService
 
     private async Task SyncLgTvAsync(DisplaySnapshot snapshot, CancellationToken cancellationToken)
     {
+        // もう一方の PC のデーモンがリーダーの間は TV に触れない（両方が切り替えると奪い合いになる）。
+        if (!_leadership.IsLeader)
+        {
+            _logger.LogDebug("Peer daemon is the leader; skipping LG TV sync.");
+            return;
+        }
+
         var age = DateTimeOffset.UtcNow - snapshot.Timestamp;
         if (age > TimeSpan.FromSeconds(5))
         {
@@ -203,6 +262,21 @@ public sealed class DisplaySyncWorker : BackgroundService
         // 優先モニタが「今このPCの入力を映しているか」を DDC/CI で都度確認する。
         // マルチ入力モニタは表示を別PC(Mac)へ移してもリンクを維持するため、列挙有無だけでは判別できない。
         var showing = _inputSourceProbe.Probe();
+        if (showing == PreferredInputSource.Unknown && _options.SkipSyncWhenInputSourceUnknown)
+        {
+            _logger.LogDebug("Preferred monitor input source is unknown; skipping LG TV sync.");
+            return;
+        }
+
+        // Windows がロック中などにディスプレイを作り直すと、Dell の接続方式が不明（出力方式 -1）のまま固定されることがある。
+        // Dell は入力を切り替えても DP のリンクを保つので、その後ディスプレイの変化の通知は来ない。
+        // 列挙だけで判断しないよう、DDC でも判定できないときに限って見送る。
+        if (showing == PreferredInputSource.Unknown && !IsEnumerationReliable(snapshot))
+        {
+            _logger.LogDebug("Preferred monitor connection kind and input source are both unknown; skipping LG TV sync.");
+            return;
+        }
+
         var effectiveOnline = showing switch
         {
             PreferredInputSource.ThisPc => true,
@@ -279,9 +353,14 @@ public sealed class DisplaySyncWorker : BackgroundService
         return false;
     }
 
+    // 優先モニタを特定できないスナップショット（ディスプレイ構成の作り直し途中など）は同期に使わない。
     private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
-        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
-           (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown);
+        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey);
+
+    // 列挙の結果（優先モニタがつながっているか）を判定に使ってよいか。接続方式が不明な列挙は構成の作り直し途中の
+    // ことが多いので信用しない。DDC で表示元を判定できたときは、列挙を使わないのでこの条件は要らない。
+    private static bool IsEnumerationReliable(DisplaySnapshot snapshot)
+        => snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown;
 
     // TV 到達不可とみなす例外（ネットワーク断、または未検出/登録失敗＝オフライン）。
     private static bool IsTvUnavailable(Exception ex)

@@ -44,7 +44,7 @@ public sealed class DdcInputSourceProbe : IPreferredInputSourceProbe
     {
         _options = options.Value;
         _logger = logger;
-        _thisPcCodes = ResolveThisPcCodes(_options.PreferredMonitorThisPcInputSources);
+        _thisPcCodes = ResolveThisPcCodes(_options.ResolveThisPcInputSources());
     }
 
     private int[] ResolveThisPcCodes(string[]? names)

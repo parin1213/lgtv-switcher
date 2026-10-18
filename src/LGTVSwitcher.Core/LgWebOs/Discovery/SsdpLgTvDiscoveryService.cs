@@ -53,15 +53,23 @@ public sealed class SsdpLgTvDiscoveryService : ILgTvDiscoveryService
             return Array.Empty<LgTvDiscoveryResult>();
         }
 
+        // NIC ごとに応答を 2 秒待つため、順番に回すと NIC の数だけ待ちが積み上がる（Mac は有線・Wi-Fi 等で 10 秒前後）。
+        // 並列に探索し、結果は NIC の列挙順に重複を除いてまとめる（順に回した場合と同じ優先順位になる）。
+        var perInterface = await Task.WhenAll(interfaces.Select(nic =>
+            DiscoverOnInterfaceAsync(nic, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, cancellationToken))).ConfigureAwait(false);
+
         var allResponses = new List<DiscoveredResponse>();
         var dedupKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sequence = 0;
-
-        foreach (var nic in interfaces)
+        foreach (var (responses, _) in perInterface)
         {
-            var (responses, nextSequence) = await DiscoverOnInterfaceAsync(nic, dedupKeys, sequence, cancellationToken).ConfigureAwait(false);
-            sequence = nextSequence;
-            allResponses.AddRange(responses);
+            foreach (var response in responses.OrderBy(r => r.Sequence))
+            {
+                if (dedupKeys.Add(BuildDedupKey(response.Result)))
+                {
+                    allResponses.Add(response with { Sequence = sequence++ });
+                }
+            }
         }
 
         var aggregated = AggregateByAddress(allResponses);
