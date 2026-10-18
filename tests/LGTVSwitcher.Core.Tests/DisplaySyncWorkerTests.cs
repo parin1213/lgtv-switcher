@@ -946,6 +946,34 @@ public class DisplaySyncWorkerTests
         await worker.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task UnknownConnection_WithDefiniteInputSource_ShouldSwitch()
+    {
+        // ロック中にディスプレイが作り直され、Dell の接続方式が不明のままになった状態。
+        // DDC で「この PC を映している」と判定できれば、列挙に頼らず切り替える。
+        var provider = new FakeSnapshotProvider();
+        var controller = new FakeLgTvController { CurrentInput = "HDMI_2" };
+        var probe = new FakeInputSourceProbe { Result = PreferredInputSource.ThisPc };
+        var options = Options.Create(new LgTvSwitcherOptions
+        {
+            TargetInputId = "HDMI_4",
+            FallbackInputId = "HDMI_2",
+            PreferredMonitorName = "TEST",
+        });
+
+        using var worker = new DisplaySyncWorker(provider, controller, probe, options, NullLogger<DisplaySyncWorker>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await WaitForStart(provider);
+        await Task.Delay(100);
+        provider.Publish(CreateSnapshot(online: true, connection: MonitorConnectionKind.Unknown));
+
+        var switched = await WaitForSwitchAsync(controller, call => call == "HDMI_4");
+        Assert.True(switched, "接続方式が不明でも、DDC が ThisPc なら HDMI_4 へ切り替えるべき。");
+
+        await worker.StopAsync(CancellationToken.None);
+    }
+
     private sealed class FakeLeadership(bool isLeader) : LGTVSwitcher.Core.Coordination.ILeadershipState
     {
         private volatile bool _isLeader = isLeader;

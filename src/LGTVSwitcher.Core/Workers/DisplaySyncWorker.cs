@@ -268,6 +268,15 @@ public sealed class DisplaySyncWorker : BackgroundService
             return;
         }
 
+        // Windows がロック中などにディスプレイを作り直すと、Dell の接続方式が不明（出力方式 -1）のまま固定されることがある。
+        // Dell は入力を切り替えても DP のリンクを保つので、その後ディスプレイの変化の通知は来ない。
+        // 列挙だけで判断しないよう、DDC でも判定できないときに限って見送る。
+        if (showing == PreferredInputSource.Unknown && !IsEnumerationReliable(snapshot))
+        {
+            _logger.LogDebug("Preferred monitor connection kind and input source are both unknown; skipping LG TV sync.");
+            return;
+        }
+
         var effectiveOnline = showing switch
         {
             PreferredInputSource.ThisPc => true,
@@ -344,9 +353,14 @@ public sealed class DisplaySyncWorker : BackgroundService
         return false;
     }
 
+    // 優先モニタを特定できないスナップショット（ディスプレイ構成の作り直し途中など）は同期に使わない。
     private static bool IsEligibleSnapshot(DisplaySnapshot snapshot)
-        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey) &&
-           (snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown);
+        => !string.IsNullOrWhiteSpace(snapshot.PreferredMonitorEdidKey);
+
+    // 列挙の結果（優先モニタがつながっているか）を判定に使ってよいか。接続方式が不明な列挙は構成の作り直し途中の
+    // ことが多いので信用しない。DDC で表示元を判定できたときは、列挙を使わないのでこの条件は要らない。
+    private static bool IsEnumerationReliable(DisplaySnapshot snapshot)
+        => snapshot.PreferredMonitor is null || snapshot.PreferredMonitor.ConnectionKind != MonitorConnectionKind.Unknown;
 
     // TV 到達不可とみなす例外（ネットワーク断、または未検出/登録失敗＝オフライン）。
     private static bool IsTvUnavailable(Exception ex)

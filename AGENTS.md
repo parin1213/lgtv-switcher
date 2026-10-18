@@ -22,7 +22,7 @@
 ## アーキテクチャ指針
 - **同期ループ**: `DisplaySyncWorker` は `Channel<DisplaySnapshot>` + `PeriodicTimer`（800ms debounce）で同期を行う。Rx は撤去済み。
 - **Stale/Noise 除去**:
-  - `PreferredMonitorEdidKey` が空、または `ConnectionKind=Unknown` のスナップショットは無視。
+  - `PreferredMonitorEdidKey` が空のスナップショットは無視。`ConnectionKind=Unknown` のときは列挙結果を信用せず、DDC で表示元を判定できたときだけ同期する（Windows がロック中にディスプレイを作り直すと Unknown のまま固定され、Dell は入力切替で DP リンクを保つため次の通知が来ない）。
   - Preferred monitor 以外のモニタ変化でも Sync が走ることを期待。この動作を破壊しないこと。
   - ネットワーク例外（WebSocket/HttpRequest/Socket）はそのスナップショットを捨て、ループは継続。
 - **LGTV 同期**: オンライン/オフライン双方で Target/Fallback を自動切替。既に目標入力なら冪等スキップ。
